@@ -2,11 +2,11 @@
 
 import json
 import threading
-from datetime import date
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+import pandas as pd
 import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
@@ -15,9 +15,9 @@ APP = str(Path(__file__).resolve().parent.parent / "app.py")
 TERRENOS = {
     1: ("Finca A", "Valledupar, Cesar", [(11, "Solar Cesar")]),
     2: ("Finca B", "Cartagena, Bolívar", [(21, "Solar Bolívar")]),
-    3: ("Finca C", "Valledupar, Cesar", [(31, "Solar Programado")]),
+    3: ("Finca C", "Valledupar, Cesar", [(31, "Solar Programado"), (32, "Solar Aprobado")]),
 }
-ESTADO_TSF = {11: "Solicitud radicada", 21: "Solicitud radicada", 31: "Programado"}
+ESTADO_TSF = {11: "Solicitud radicada", 21: "Solicitud radicada", 31: "Programado", 32: "Solicitud aprobada"}
 
 
 class ApiFalsa(BaseHTTPRequestHandler):
@@ -78,88 +78,80 @@ def test_todas_las_paginas_cargan_sin_consultar_toda_la_api(api):
     at = app(api)
     at.run()
     assert not at.exception and not at.error
-    for pagina in ("paginas/proyectos.py", "paginas/historico.py", "paginas/explorar_api.py"):
+    for pagina in ("paginas/vista_general.py", "paginas/historico.py", "paginas/explorar_api.py"):
         at.switch_page(pagina)
         at.run()
         assert not at.exception, pagina
-    assert ApiFalsa.consultas == []  # nada se descarga hasta que el usuario busca
+    assert ApiFalsa.consultas == []  # nada se descarga hasta que el usuario busca o pide el resumen
 
 
-def test_buscar_abrir_guardar_y_volver(api):
-    at = app(api)
-    at.switch_page("paginas/proyectos.py")
-    at.run()
-    at.text_input[0].input("solar cesar")
+def buscar(at, texto):
+    at.text_input[0].input(texto)
     at.run()
     assert not at.exception
-    resultado = at.dataframe[0].value
-    assert list(resultado["Proyecto"]) == ["Solar Cesar"]
-    assert list(resultado["Estado TSF"]) == ["Solicitud radicada"]
-    assert list(resultado["Estado homologado"]) == ["Sin homologación"]  # en CORPOCESAR puede ser Radicado o Llega auto
-    # simula seleccionar la fila (abre el detalle del proyecto)
-    at.session_state["_terreno_seleccionado"] = "1"
-    at.session_state["_minifarm_seleccionada"] = "11"
-    at.run()
-    assert any("unergy-header" in m.value and "Solar Cesar" in m.value for m in at.markdown)
-    assert any("Solicitud radicada" in m.value for m in at.markdown)
-    etapa = next(s for s in at.selectbox if s.label.startswith("Etapa actual"))
-    assert "Acta" in etapa.options
-    assert etapa.value is None and not etapa.disabled  # sin homologación clara: se registra a mano
-    etapa.select("Llega auto")
-    for d in at.date_input:
-        if d.label == "⏱ Radicado":
-            d.set_value(date(2026, 6, 1))
-        if d.label == "⏱ Llega auto":
-            d.set_value(date(2026, 8, 20))
-    next(b for b in at.button if b.label == "Guardar").click()
-    at.run()
-    assert not at.exception and not at.error
-    assert any("sf-cifra" in m.value for m in at.markdown)
-    # volver: regresa al buscador con el texto conservado
-    next(b for b in at.button if b.label.startswith("← Volver")).click()
-    at.run()
-    assert at.text_input[0].value == "solar cesar"
-    fila = at.dataframe[0].value.iloc[0]
-    assert fila["Estado homologado"] == "Llega auto" and fila["Origen"] == "Manual" and fila["Avance"] == 43
-    # sin texto aparece la tabla de seguimiento con el proyecto guardado
-    at.text_input[0].input("")
-    at.run()
-    assert "Solar Cesar" in list(at.dataframe[0].value["Proyecto"])
-    # la vista general ya muestra el proyecto
-    at.switch_page("paginas/vista_general.py")
-    at.run()
-    assert at.metric[0].value == "1"
-    assert ApiFalsa.metodos_no_get == []
+    return at.dataframe[0].value
 
 
-def test_estado_tsf_con_homologacion_clara_se_usa_directo(api):
+def test_busqueda_muestra_estado_tsf_homologado_y_avance(api):
     at = app(api)
-    at.switch_page("paginas/proyectos.py")
     at.run()
-    at.text_input[0].input("programado")
+    tabla = buscar(at, "finca c").set_index("Proyecto")
+    assert tabla.loc["Solar Programado", "Estado TSF"] == "Programado"
+    assert tabla.loc["Solar Programado", "Etapa homologada"] == "Inventario"
+    assert tabla.loc["Solar Programado", "Avance"] == 0
+    assert tabla.loc["Solar Aprobado", "Etapa homologada"] == "Resolución"
+    assert tabla.loc["Solar Aprobado", "Avance"] == 100
+
+
+def test_homologacion_ambigua_no_elige(api):
+    at = app(api)
     at.run()
-    fila = at.dataframe[0].value.iloc[0]
-    assert (fila["Estado TSF"], fila["Estado homologado"], fila["Origen"], fila["Avance"]) == (
-        "Programado", "Inventario", "TSF", 0)
+    fila = buscar(at, "solar cesar").iloc[0]
+    assert fila["Etapa homologada"] == "Radicado / Llega auto (29–43 %)"
+    assert pd.isna(fila["Avance"])
+
+
+def test_detalle_es_solo_lectura_y_volver_conserva_busqueda(api):
+    at = app(api)
+    at.run()
+    buscar(at, "finca c")
     at.session_state["_terreno_seleccionado"] = "3"
     at.session_state["_minifarm_seleccionada"] = "31"
     at.run()
-    etapa = next(s for s in at.selectbox if s.label.startswith("Etapa actual"))
-    assert etapa.value == "Inventario" and etapa.disabled
-
-
-def test_car_no_identificada_pide_seleccion(api):
-    at = app(api)
-    at.switch_page("paginas/proyectos.py")
-    at.session_state["_terreno_seleccionado"] = "2"
+    assert not at.exception
+    assert any("unergy-header" in m.value and "Solar Programado" in m.value for m in at.markdown)
+    assert any("sf-actual" in m.value and "Inventario" in m.value for m in at.markdown)
+    assert not at.selectbox and not at.date_input  # nada que editar
+    assert not any(b.label == "Guardar" for b in at.button)
+    next(b for b in at.button if b.label.startswith("← Volver")).click()
     at.run()
-    assert any("Selecciona la CAR" in i.value for i in at.info)
+    assert at.text_input[0].value == "finca c"
+    assert ApiFalsa.metodos_no_get == []
+
+
+def test_sin_car_no_se_homologa(api):
+    at = app(api)
+    at.session_state["_terreno_seleccionado"] = "2"
+    at.session_state["_minifarm_seleccionada"] = "21"
+    at.run()
+    assert any("Sin CAR identificada" in c.value for c in at.caption)
+
+
+def test_resumen_general_bajo_demanda(api):
+    at = app(api)
+    at.switch_page("paginas/vista_general.py")
+    at.run()
+    assert not at.metric
+    next(b for b in at.button if b.label == "Cargar resumen").click()
+    at.run()
+    assert not at.exception
+    assert at.metric[0].value == "4"
+    assert at.metric[1].value == "2"  # Programado e Inventario/Resolución son claros
 
 
 def test_sin_secretos_al_buscar_muestra_aviso():
     st.cache_data.clear()
     at = AppTest.from_file(APP, default_timeout=60)
-    at.switch_page("paginas/proyectos.py")
     at.run()
     at.text_input[0].input("algo")
     at.run()

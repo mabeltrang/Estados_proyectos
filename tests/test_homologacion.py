@@ -1,5 +1,5 @@
 from config.flujos import FLUJOS, avance
-from config.homologacion import ESTADOS_UNERGY, estado_canonico, estado_tsf, etapa_desde_tsf
+from config.homologacion import ESTADOS_UNERGY, estado_canonico, estado_tsf, etapa_desde_tsf, homologar
 
 
 def test_toda_etapa_de_todo_flujo_tiene_estado_tsf_valido():
@@ -42,3 +42,12 @@ def test_etapa_desde_tsf_solo_si_es_clara():
     assert etapa_desde_tsf("CORPOCESAR", "Respuesta a requerimientos") is None
     assert etapa_desde_tsf("CORPOCESAR", "Licencia de aprovechamiento forestal") is None
     assert etapa_desde_tsf(None, "Programado") is None
+
+
+def test_homologar_da_rango_de_avance_cuando_hay_varias():
+    h = homologar("CORPOCESAR", "Solicitud radicada")
+    assert h.etapas == ("Radicado", "Llega auto") and not h.clara
+    assert round(h.avance_min * 100) == 29 and round(h.avance_max * 100) == 43
+    h = homologar("CORPOCESAR", "Programado")
+    assert h.clara and h.avance_min == 0
+    assert homologar("CORPOCESAR", "Requerimientos").etapas == ()

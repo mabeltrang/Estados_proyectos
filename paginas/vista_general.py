@@ -1,98 +1,105 @@
-"""Vista general de los proyectos que tienen seguimiento registrado (no consulta la API)."""
+"""Resumen de todos los proyectos: estado TSF, etapa homologada y avance (solo lectura)."""
 
 from __future__ import annotations
-
-from datetime import timedelta
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from config import ajustes
-from config.constantes import SEMAFORO_COLOR, SEMAFORO_TEXTO, Columna, Semaforo
-from core.fechas import formato_fecha, hoy_colombia
-from ui.componentes import PURPLE, encabezado, texto_semaforo
-from ui.datos import aviso_almacen, tabla_seguimiento
+from config.constantes import Columna, TipoHomologacion
+from core.api_unergy import ErrorApiUnergy
+from core.proyectos import agregar_homologacion, asignar_car
+from ui.componentes import PURPLE, encabezado
+from ui.datos import proyectos_api
+
+CLAVE_CARGAR = "_resumen_cargado"
 
 encabezado(
     "Trámites de aprovechamiento forestal",
-    "Unergy · Equipo forestal · Proyectos con seguimiento registrado. Para agregar uno, búscalo en «Proyectos».",
+    "Unergy · Equipo forestal · Resumen de todos los proyectos según su estado en TSF.",
 )
-aviso_almacen()
 
-df, _ = tabla_seguimiento()
-if df.empty:
-    st.info("Todavía no hay proyectos en seguimiento. Ve a «Proyectos», busca uno y guarda su estado.")
-    st.page_link("paginas/proyectos.py", label="Ir a Proyectos", icon="🌳")
+if not st.session_state.get(CLAVE_CARGAR):
+    st.info(
+        "El resumen consulta todos los terrenos de la API y puede tardar varios minutos la primera vez "
+        "(después queda guardado una hora). Para un proyecto puntual usa «Proyectos»."
+    )
+    if st.button("Cargar resumen", type="primary"):
+        st.session_state[CLAVE_CARGAR] = True
+        st.rerun()
     st.stop()
 
-hoy = hoy_colombia()
-limite = hoy + timedelta(days=ajustes.DIAS_PROXIMO_A_RESOLUCION)
-en_alerta = df[df["semaforo"] == Semaforo.ROJO]
-proximos = df[df["resolucion_probable"].map(lambda f: f is not None and not pd.isna(f) and f <= limite)]
+try:
+    carga = proyectos_api()
+except ErrorApiUnergy as exc:
+    st.error(f"No fue posible leer los proyectos: {exc.mensaje}")
+    st.stop()
 
+df = agregar_homologacion(asignar_car(carga.tabla, {}))
+if df.empty:
+    st.info("La API no devolvió proyectos.")
+    st.stop()
+
+claras = df[df[Columna.HOMOLOGACION] == TipoHomologacion.CLARA]
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("En seguimiento", len(df))
-c2.metric("CAR", df[Columna.CAR.value].replace("", pd.NA).nunique())
-c3.metric("En alerta", len(en_alerta), help="Superaron el P75 histórico del tramo en que están.")
-c4.metric("Próximos a resolución", len(proximos), help=f"Resolución probable antes del {formato_fecha(limite)}.")
+c1.metric("Proyectos", len(df))
+c2.metric("Con homologación clara", len(claras))
+c3.metric("Avance promedio", f"{claras[Columna.AVANCE].mean():.0f} %" if not claras.empty else "—",
+          help="Solo proyectos con homologación clara.")
+c4.metric("Sin CAR identificada", int(df[Columna.CAR].isna().sum() + (df[Columna.CAR] == "").sum()))
 
 izq, der = st.columns(2)
 with izq:
-    st.subheader("Proyectos por CAR")
-    por_car = (
-        df[Columna.CAR.value].replace("", "Sin identificar").value_counts().rename_axis("CAR").reset_index(name="Proyectos")
+    st.subheader("Proyectos por estado TSF")
+    por_estado = (
+        df[Columna.ESTADO_FORESTAL].replace("", "No encontrado").value_counts()
+        .rename_axis("Estado TSF").reset_index(name="Proyectos")
     )
+    st.altair_chart(
+        alt.Chart(por_estado).mark_bar(color=PURPLE).encode(
+            x="Proyectos:Q", y=alt.Y("Estado TSF:N", sort="-x", title=None), tooltip=["Estado TSF", "Proyectos"]
+        ),
+        width="stretch",
+    )
+with der:
+    st.subheader("Proyectos por CAR")
+    por_car = df[Columna.CAR].fillna("Sin identificar").replace("", "Sin identificar").value_counts()
+    por_car = por_car.rename_axis("CAR").reset_index(name="Proyectos")
     st.altair_chart(
         alt.Chart(por_car).mark_bar(color=PURPLE).encode(
             x="Proyectos:Q", y=alt.Y("CAR:N", sort="-x", title=None), tooltip=["CAR", "Proyectos"]
         ),
         width="stretch",
     )
-with der:
-    st.subheader("Semáforo")
-    orden = list(Semaforo)
-    sem = df["semaforo"].value_counts().reindex(orden, fill_value=0).rename_axis("s").reset_index(name="Proyectos")
-    sem["Estado"] = sem["s"].map(lambda s: SEMAFORO_TEXTO[Semaforo(s)])
-    st.altair_chart(
-        alt.Chart(sem).mark_bar().encode(
-            x="Proyectos:Q",
-            y=alt.Y("Estado:N", sort=[SEMAFORO_TEXTO[s] for s in orden], title=None),
-            color=alt.Color(
-                "Estado:N",
-                scale=alt.Scale(domain=[SEMAFORO_TEXTO[s] for s in orden], range=[SEMAFORO_COLOR[s] for s in orden]),
-                legend=None,
-            ),
-            tooltip=["Estado", "Proyectos"],
-        ),
-        width="stretch",
-    )
 
-st.subheader("Proyectos por etapa")
-etapas = (
-    df.assign(Etapa=df["etapa_actual"].replace("", "Sin registrar"), CAR=df[Columna.CAR.value])
+st.subheader("Etapa homologada por CAR")
+resumen = (
+    df.assign(
+        CAR=df[Columna.CAR].fillna("Sin identificar").replace("", "Sin identificar"),
+        Etapa=df[Columna.ETAPA_HOMOLOGADA].replace("", "Sin homologación"),
+    )
     .groupby(["CAR", "Etapa"])
     .size()
     .reset_index(name="Proyectos")
 )
-st.dataframe(etapas, hide_index=True, width="stretch")
+st.dataframe(resumen, hide_index=True, width="stretch")
 
-
-def tabla_corta(sub: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "Semáforo": sub["semaforo"].map(lambda s: texto_semaforo(Semaforo(s))),
-            "Proyecto": sub[Columna.NOMBRE.value],
-            "CAR": sub[Columna.CAR.value],
-            "Etapa actual": sub["etapa_actual"],
-            "Resolución probable": sub["resolucion_probable"].map(lambda f: formato_fecha(f) if f else "—"),
-        }
+with st.expander("Todos los proyectos"):
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "Proyecto": df[Columna.NOMBRE],
+                "Terreno": df[Columna.TERRENO_NOMBRE],
+                "CAR": df[Columna.CAR],
+                "Estado TSF": df[Columna.ESTADO_FORESTAL].replace("", "No encontrado"),
+                "Etapa homologada": df[Columna.ETAPA_HOMOLOGADA].replace("", "Sin homologación"),
+                "Avance": df[Columna.AVANCE_TEXTO],
+            }
+        ),
+        hide_index=True,
+        width="stretch",
     )
-
-
-if not en_alerta.empty:
-    st.subheader("En alerta")
-    st.dataframe(tabla_corta(en_alerta), hide_index=True, width="stretch")
-if not proximos.empty:
-    st.subheader("Próximos a resolución")
-    st.dataframe(tabla_corta(proximos.sort_values("resolucion_probable")), hide_index=True, width="stretch")
+if carga.errores:
+    with st.expander(f"Errores al consultar ({len(carga.errores)})"):
+        for e in carga.errores:
+            st.caption(e)

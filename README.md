@@ -1,101 +1,29 @@
 # Seguimiento forestal · Unergy
 
-Tablero en Streamlit para seguir los trámites de aprovechamiento forestal de cada proyecto
-(Minifarm) ante su CAR. Estima cuándo llega el siguiente paso y cuándo saldría la resolución,
-usando los tiempos de expedientes anteriores.
+Tablero de **solo lectura** en Streamlit. Lee de la API de Unergy el estado forestal de cada
+proyecto en TSF, lo homologa a la etapa del flujo de su CAR y muestra el % de avance.
+La app no cambia estados ni guarda nada.
 
-- Lee los proyectos de la API de Unergy **solo con GET** (nunca escribe en ella).
-- Identifica la CAR por municipio con la tabla de `analisis-compensacion-forestal`.
-- Usa el Excel histórico de `CARS_nuevo` para calcular los tiempos.
-- Guarda los estados y fechas que registras en una hoja de Google Sheets.
+- La API se usa **solo con GET** (nunca escribe en ella).
+- La CAR se identifica por municipio con la tabla de `analisis-compensacion-forestal`.
 
 ## Cómo se usa
 
-- **Proyectos:** escribe parte del nombre comercial, del proyecto o del terreno y aparecen de una
-  vez todos sus proyectos con estado, avance y equivalencia en TSF. Seleccionas uno para actualizarlo. «← Volver a la búsqueda» te
-  regresa con el mismo texto para abrir otro. Sin texto, la página muestra los proyectos que ya
-  tienen seguimiento guardado.
-- **Vista general:** resumen de los proyectos en seguimiento. No consulta la API, así que carga rápido.
-- La API solo se consulta al buscar (unas pocas llamadas) y al abrir un terreno (una llamada).
-  Recorrer todos los terrenos solo ocurre en «Explorar API → Analizar todos», y puede tardar minutos.
+- **Proyectos** (página principal): escribe parte del nombre comercial, del proyecto o del terreno.
+  Aparecen todos sus proyectos con: CAR, Estado TSF, Etapa homologada y Avance. Selecciona uno para
+  ver el detalle (estado, avance y el flujo de etapas de su CAR). «← Volver» regresa a la búsqueda.
+- **Resumen general:** con el botón «Cargar resumen» consulta todos los terrenos (tarda varios
+  minutos la primera vez; luego queda guardado una hora) y muestra totales por estado y por CAR.
+- **Histórico y calidad de datos:** revisión del Excel de tiempos de las CAR.
+- **Explorar API:** probar conexión, ver campos y ubicar en qué campo viene un dato.
 
-## Qué hay en cada carpeta
+## Homologación TSF → etapa de la CAR
 
-| Ruta | Contenido |
-|---|---|
-| `app.py` | Arranque: contraseña opcional y menú de páginas |
-| `paginas/` | Las cuatro pantallas: vista general, proyectos, histórico, explorar API |
-| `config/flujos.py` | **Etapas de cada CAR.** Aquí se agregan o cambian etapas |
-| `config/homologacion.py` | **Equivalencia provisional** entre el «Estado forestal» de Unergy y las etapas de cada CAR |
-| `config/ajustes.py` | Mínimo de antecedentes, días calendario/hábiles, CAR excluidas, encabezados del Excel |
-| `config/car_lookup.py`, `config/municipios_car.csv` | Copia de la tabla municipio → CAR |
-| `data/Fechas_CARS.xlsx` | Copia del histórico (solo lectura) |
-| `core/` | Lógica: API, histórico, estadísticas, predicción, almacenamiento |
-| `ui/` | Estilos, tarjetas y unión de datos para las páginas |
-| `tests/` | Pruebas automáticas |
+El estado se lee del campo `forestry_license_resolution` de cada proyecto (configurable en
+`config/ajustes.py`). Si el valor no es un estado de TSF, aparece «No encontrado».
+`forestry_licence` no es el estado: es el tipo de permiso.
 
-## 1. Crear el repositorio en GitHub
-
-1. En GitHub: **New repository** → nombre `seguimiento-forestal` → marca **Private** → Create.
-2. Descomprime el zip en tu computador.
-3. En la página del repositorio: **Add file → Upload files** y arrastra *el contenido* de la carpeta
-   (incluidas las carpetas `.streamlit`, `config`, etc.). Si no ves `.streamlit` por estar oculta,
-   súbela aparte o usa GitHub Desktop.
-4. **No subas** un archivo `secrets.toml` ni el JSON de Google. El `.gitignore` los bloquea si usas git.
-
-## 2. Publicar en Streamlit Community Cloud
-
-1. En share.streamlit.io → **Create app** → elige el repo, rama `main`, archivo `app.py`.
-2. En **Advanced settings** elige Python **3.12** (la app necesita 3.11 o superior).
-3. En **Secrets** pega el contenido de `.streamlit/secrets.toml.example` con tus valores
-   (como mínimo la `api_key`).
-4. Deploy. Luego en **Settings → Sharing** confirma que solo las personas invitadas pueden verla:
-   la app muestra datos internos de Unergy.
-
-## 3. Guardar el seguimiento (Google Sheets)
-
-Streamlit Cloud reinicia la app de vez en cuando y borra cualquier archivo que la app haya escrito.
-Por eso los estados y fechas se guardan en una hoja de Google. Sin esto la app funciona, pero
-avisa que los cambios se perderán.
-
-1. Entra a console.cloud.google.com y crea un proyecto (ej. `seguimiento-forestal`).
-2. **APIs y servicios → Biblioteca**: habilita *Google Sheets API* y *Google Drive API*.
-3. **APIs y servicios → Credenciales → Crear credenciales → Cuenta de servicio**. Ponle un nombre y termina.
-4. Abre la cuenta creada → pestaña **Claves → Agregar clave → JSON**. Se descarga un archivo.
-   Guárdalo en un lugar seguro; no lo subas a GitHub ni lo compartas por chat.
-5. Crea una hoja de Google vacía (ej. "Seguimiento forestal"). **Compartir** → pega el
-   `client_email` del JSON → permiso **Editor**.
-6. En los Secrets de Streamlit:
-   - `[gsheets] spreadsheet_url` = URL de la hoja.
-   - `[gcp_service_account]` = copia cada valor del JSON en su línea. La `private_key` va completa,
-     entre comillas, tal como aparece en el JSON (con los `\n`).
-
-La app crea sola tres pestañas en la hoja:
-`seguimiento` (etapa actual por proyecto), `fechas_etapas` (fecha de cada etapa) e
-`historial_cambios` (quién cambió qué y cuándo). Puedes abrirlas y revisarlas; si corriges algo a
-mano, pulsa "Rerun" o recarga la página.
-
-> Si Google no te deja crear la clave (política de la organización), pide a tecnología que
-> cree la cuenta de servicio y cargue los Secrets.
-
-## 4. Correr en tu computador (opcional)
-
-```bash
-pip install -r requirements-dev.txt
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # y llena tus valores
-streamlit run app.py
-python -m pytest                                              # pruebas
-```
-
-## Estado forestal de TSF
-
-- **TSF hoy (API):** se lee solo del campo `forestry_license_resolution` (configurable en
-  `config/ajustes.py`). Si ese valor no es un estado de TSF, aparece «No encontrado». No se revisan
-  otros campos. `forestry_licence` no es el estado: es el tipo de permiso y se muestra aparte.
-- **Estado homologado:** si el estado de TSF corresponde a UNA sola etapa del flujo de la CAR, esa
-  es la etapa del proyecto (origen «TSF», no se edita a mano). Si corresponde a varias o a ninguna,
-  aparece «Sin homologación» y la etapa la registras tú (origen «Manual»).
-- Tabla de equivalencias: `ETAPA_A_TSF` en `config/homologacion.py`.
+La tabla `ETAPA_A_TSF` de `config/homologacion.py` dice qué estado de TSF corresponde a cada etapa:
 
 | Etapas | Estado TSF |
 |---|---|
@@ -106,33 +34,81 @@ python -m pytest                                              # pruebas
 | Visita, Visita técnica, Acta | Visita |
 | Resolución | Solicitud aprobada |
 
-## Cómo se calcula la predicción
+Con eso, para cada proyecto:
 
-- Cada CAR tiene su propia secuencia de etapas (`config/flujos.py`). Las etapas marcadas con ⏱
-  corresponden a una fecha del Excel (radicado, auto, visita, resolución) y son las únicas con
-  tiempos históricos. Las demás (pagos, publicaciones, acta) se registran, pero el reloj sigue
-  corriendo desde el último ⏱.
-- **Siguiente hito:** días desde el último ⏱ frente a los antecedentes del tramo hasta el próximo ⏱.
-  La cuenta regresiva va hasta la mediana; si la pasó, muestra los días de retraso.
-- **Semáforo:** verde hasta el P25, amarillo hasta la mediana, naranja hasta el P75, rojo después.
-- **Resolución:** toma los expedientes que, desde ese mismo ⏱, tardaron más de lo que este
-  proyecto ya lleva, y les resta ese tiempo. Muestra un rango (escenario rápido, probable, lento).
-- **Origen del dato:** histórico propio (≥ `MIN_ANTECEDENTES` expedientes), histórico limitado
-  (menos, con advertencia) o referencia general (otras CAR, solo si la CAR no tiene ninguno).
-- La fecha de guardado no se usa como fecha de la etapa: cada fecha se registra a mano.
+- **Una sola etapa posible** en el flujo de su CAR → esa etapa y su % de avance.
+- **Varias posibles** (ej. «Solicitud radicada» en CORPOCESAR: Radicado o Llega auto) → la app no
+  elige: muestra las posibles y el rango de avance (29–43 %).
+- **Ninguna** (Requerimientos, Respuesta a requerimientos, Respuesta radicado, Pausado, Solicitud
+  rechazada, Exonerado) → «Sin homologación».
+
+**Avance** = etapas cumplidas sobre el total de etapas del flujo de esa CAR
+(Inventario = 0 %, Resolución = 100 %).
+
+## Qué hay en cada carpeta
+
+| Ruta | Contenido |
+|---|---|
+| `app.py` | Arranque: contraseña opcional y menú de páginas |
+| `paginas/` | Proyectos, resumen general, histórico y explorar API |
+| `config/flujos.py` | Etapas de cada CAR |
+| `config/homologacion.py` | Equivalencia entre etapas y estados de TSF |
+| `config/ajustes.py` | Campo del estado TSF, parámetros de la API y del histórico |
+| `config/car_lookup.py`, `config/municipios_car.csv` | Copia de la tabla municipio → CAR |
+| `data/Fechas_CARS.xlsx` | Copia del histórico de tiempos (solo lectura) |
+| `core/` | Lógica: API, proyectos, homologación, histórico y motor de tiempos |
+| `ui/` | Estilos Unergy y datos para las páginas |
+| `tests/` | Pruebas automáticas |
+
+El motor de cuenta regresiva y proyección de resolución (`core/prediccion.py`,
+`core/estadisticas.py`) sigue en el repositorio con sus pruebas, pero no se muestra por ahora.
+
+## 1. Crear el repositorio en GitHub
+
+1. **New repository** → marca **Private** → Create.
+2. **Add file → Upload files** y arrastra *el contenido* de la carpeta (incluida `.streamlit`).
+   Sube todo en una sola carga y un solo commit.
+3. No subas `secrets.toml`.
+
+## 2. Publicar en Streamlit Community Cloud
+
+1. share.streamlit.io → **Create app** → repo, rama `main`, archivo `app.py`.
+2. **Advanced settings** → Python 3.12 o superior.
+3. **Secrets**:
+
+   ```toml
+   [unergy]
+   api_key = "TU_API_KEY"
+   base_url = "https://originabot.uner.gy"
+   ```
+
+   Opcional, para pedir contraseña al entrar:
+
+   ```toml
+   [app]
+   password = "una-clave"
+   ```
+4. En **Settings → Sharing** confirma que solo las personas invitadas pueden verla.
+
+## 3. Correr en tu computador (opcional)
+
+```bash
+pip install -r requirements-dev.txt
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # y pon tu api_key
+streamlit run app.py
+python -m pytest
+```
 
 ## Tareas frecuentes
 
-- **Actualizar el histórico:** reemplaza `data/Fechas_CARS.xlsx` por la versión nueva de
-  `CARS_nuevo` (mismo nombre). Si cambian los encabezados, agrégalos en `config/ajustes.py`.
-- **Agregar o cambiar etapas:** edita `config/flujos.py`. Las pruebas (`tests/test_flujos.py`)
-  verifican el número de etapas; actualízalo ahí también.
-- **Incluir CORPOBOYACÁ o CAR:** agrega su flujo y quítala de `CARS_HISTORICO_EXCLUIDAS`.
-- **Días hábiles:** cambia `UNIDAD_DIAS` en `config/ajustes.py` (no descuenta festivos).
+- **Cambiar una equivalencia:** edita `ETAPA_A_TSF` en `config/homologacion.py`.
+- **Agregar o cambiar etapas de una CAR:** edita `config/flujos.py` y su equivalencia en
+  `config/homologacion.py` (las pruebas verifican que toda etapa tenga estado TSF).
+- **Si el estado TSF viene en otro campo:** cambia `CAMPOS_ESTADO_FORESTAL` en `config/ajustes.py`.
+  Para ubicarlo, usa «Explorar API → 3» y escribe el estado en «Texto a ubicar».
 
 ## Seguridad
 
 - El cliente de la API (`core/api_unergy.py`) solo tiene GET y solo acepta rutas
   `/api/roles/forest/` y `/api/roles/environmental/`. Hay pruebas que lo verifican.
-- La API Key vive solo en Secrets; no aparece en el código, en pantalla ni en mensajes de error.
-- Opcional: `[app] password` en Secrets agrega una contraseña a la entrada.
+- La API Key vive solo en Secrets; no aparece en el código, en pantalla ni en errores.

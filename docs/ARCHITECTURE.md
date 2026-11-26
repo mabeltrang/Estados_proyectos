@@ -1,11 +1,13 @@
 # Arquitectura
 
 ## Qué es y qué no hace
-Tablero interno para estimar tiempos de trámites de aprovechamiento forestal por CAR.
-No escribe en la API de Unergy, no usa modelos de IA para predecir y no modifica el Excel histórico.
+Tablero interno de solo lectura: lee el estado forestal de cada proyecto en TSF (API de Unergy),
+lo homologa a la etapa del flujo de su CAR y muestra el % de avance. No escribe en la API, no guarda
+datos y no modifica el Excel histórico. El motor de tiempos (core/prediccion.py) existe pero no se
+muestra por ahora.
 
 ## Stack
-Python 3.12 + Streamlit (Community Cloud). Persistencia en Google Sheets vía `gspread`.
+Python 3.12 + Streamlit (Community Cloud). Sin persistencia propia.
 Ver `docs/adr/0001-streamlit-y-google-sheets.md`.
 
 ## Capas y dependencias
@@ -14,14 +16,14 @@ Ver `docs/adr/0001-streamlit-y-google-sheets.md`.
 - `core/historico.py`: lectura y calidad del Excel.
 - `core/estadisticas.py`: duraciones por tramo y elección de antecedentes.
 - `core/prediccion.py`: reglas de negocio (reloj, semáforo, resolución).
-- `core/almacenamiento.py`: Google Sheets o memoria.
+- `config/homologacion.py`: equivalencia etapa ↔ estado TSF.
 - `ui/datos.py`: caché de Streamlit y unión de todo para las páginas. La API se consulta bajo
   demanda (búsqueda con `?search=` y detalle de un terreno); la vista general sale del Google Sheet.
 
 ## Modelo de datos
 - Proyecto = Minifarm (`minifarms[]` del detalle forestal). Se identifica por `minifarm_id`.
-- Seguimiento (Google Sheets): `seguimiento` (CAR manual y efectiva, etapa actual, terreno, ubicación), `fechas_etapas`
-  (fecha por etapa), `historial_cambios` (bitácora solo de agregar).
+- Estado TSF: campo configurado en `ajustes.CAMPOS_ESTADO_FORESTAL`.
+- No hay datos propios guardados.
 
 ## Glosario
 - **Etapa:** paso del flujo de una CAR (texto del desplegable).

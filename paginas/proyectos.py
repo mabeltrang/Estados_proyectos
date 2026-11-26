@@ -1,57 +1,34 @@
-"""Buscar un proyecto, ver su estado y volver a buscar otro.
+"""Buscar proyectos y ver su estado en TSF, la etapa homologada de su CAR y el % de avance.
 
-La API solo se consulta cuando buscas (unas pocas consultas) y cuando abres un terreno (una consulta).
+Solo lectura: esta página no cambia estados ni guarda nada.
 """
 
 from __future__ import annotations
-
-from datetime import date
 
 import pandas as pd
 import streamlit as st
 
 from config import ajustes
-from config.constantes import Columna
-from config.flujos import FLUJOS, avance, cars_con_flujo, nombres_etapas, obtener_flujo
-from core.almacenamiento import Seguimiento, ahora_texto, calcular_cambios
+from config.constantes import Columna, TipoHomologacion
+from config.flujos import FLUJOS, nombres_etapas
+from config.homologacion import homologar
 from core.api_unergy import ErrorApiUnergy
-from core.fechas import dias_entre, formato_fecha, hoy_colombia
-from core.prediccion import validar_fechas
 from core.proyectos import identificar_car
-from config.homologacion import estado_tsf, etapa_desde_tsf
-from ui.componentes import (
-    avances,
-    encabezado,
-    etiqueta_estado_unergy,
-    tarjeta_cuenta_regresiva,
-    tarjeta_resolucion,
-)
-from ui.datos import (
-    CLAVE_SEGUIMIENTOS,
-    almacen,
-    aviso_almacen,
-    proyectos_busqueda,
-    minifarms_terreno,
-    prediccion_de,
-    seguimientos,
-    tabla_seguimiento,
-)
+from ui.componentes import barra_avance, encabezado, etiqueta_estado_unergy, linea_de_etapas
+from ui.datos import minifarms_terreno, proyectos_busqueda
 
 CLAVE_TERRENO = "_terreno_seleccionado"
 CLAVE_MINIFARM = "_minifarm_seleccionada"
-CLAVE_BUSQUEDA = "_texto_busqueda"        # widget (Streamlit lo borra al salir de la pantalla)
+CLAVE_BUSQUEDA = "_texto_busqueda"                    # widget (Streamlit lo borra al salir de la pantalla)
 CLAVE_BUSQUEDA_GUARDADA = "_texto_busqueda_guardado"  # copia que sobrevive para poder volver
-CLAVE_VERSION = "_version_tablas"  # cambia al volver, para que las tablas olviden la fila marcada
+CLAVE_VERSION = "_version_tablas"                     # cambia al volver, para que la tabla olvide la fila marcada
+
+COLUMNA_AVANCE = st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%")
 
 
-def abrir(terreno_id: str, minifarm_id: str | None = None) -> None:
+def abrir(terreno_id: str, minifarm_id: str) -> None:
     st.session_state[CLAVE_TERRENO] = str(terreno_id)
-    st.session_state[CLAVE_MINIFARM] = str(minifarm_id) if minifarm_id else None
-
-
-def ver_terreno(terreno_id: str) -> None:
-    abrir(terreno_id)
-    st.session_state[CLAVE_VERSION] = st.session_state.get(CLAVE_VERSION, 0) + 1
+    st.session_state[CLAVE_MINIFARM] = str(minifarm_id)
 
 
 def volver() -> None:
@@ -61,337 +38,131 @@ def volver() -> None:
     st.session_state[CLAVE_VERSION] = st.session_state.get(CLAVE_VERSION, 0) + 1
 
 
-def version() -> int:
-    return int(st.session_state.get(CLAVE_VERSION, 0))
+def vista(tabla: pd.DataFrame) -> pd.DataFrame:
+    """Tabla para mostrar: el % en barra solo si la homologación es clara; si hay varias etapas
+    posibles, el rango va junto a ellas."""
+    etapa = [
+        f"{e} ({t})" if h == TipoHomologacion.VARIAS else (e or "Sin homologación")
+        for e, h, t in zip(tabla[Columna.ETAPA_HOMOLOGADA.value], tabla[Columna.HOMOLOGACION.value],
+                           tabla[Columna.AVANCE_TEXTO.value])
+    ]
+    return pd.DataFrame(
+        {
+            "Proyecto": tabla[Columna.NOMBRE.value],
+            "Terreno": tabla[Columna.TERRENO_NOMBRE.value],
+            "CAR": tabla[Columna.CAR.value].fillna("Sin identificar").replace("", "Sin identificar"),
+            "Estado TSF": tabla[Columna.ESTADO_FORESTAL.value].replace("", "No encontrado"),
+            "Etapa homologada": etapa,
+            "Avance": tabla[Columna.AVANCE.value],
+        }
+    )
 
 
-COLUMNA_AVANCE = st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%")
-
-
-class Origen:
-    TSF = "TSF"
-    MANUAL = "Manual"
-
-
-def estado_de(mid: str, car_api: object, estado_api: str = "") -> tuple[str, str, str]:
-    """(CAR efectiva, etapa, origen). La etapa sale de TSF si su homologación es clara;
-    si no, de lo registrado a mano; si no hay ninguna, queda vacía."""
-    seg = seguimientos().get(mid)
-    car = (seg.car_manual or seg.car) if seg else ""
-    car = car or (car_api if isinstance(car_api, str) else "")
-    desde_tsf = etapa_desde_tsf(car, estado_api)
-    if desde_tsf:
-        return car, desde_tsf, Origen.TSF
-    if seg and seg.etapa_actual in nombres_etapas(car):
-        return car, seg.etapa_actual, Origen.MANUAL
-    return car, "", ""
-
-
-def vista_estados(tabla: pd.DataFrame, con_tsf_api: bool) -> pd.DataFrame:
-    filas = []
-    for _, f in tabla.iterrows():
-        estado_api = str(f.get(Columna.ESTADO_FORESTAL.value, "") or "") if con_tsf_api else ""
-        car, etapa, origen = estado_de(str(f[Columna.MINIFARM_ID.value]), f.get(Columna.CAR.value), estado_api)
-        av = avance(car, etapa)
-        fila = {"Proyecto": f[Columna.NOMBRE.value], "Terreno": f[Columna.TERRENO_NOMBRE.value],
-                "CAR": car or "Sin identificar"}
-        if con_tsf_api:
-            fila["Estado TSF"] = estado_api or "No encontrado"
-        fila.update(
-            {
-                "Estado homologado": etapa or "Sin homologación",
-                "Origen": (origen if con_tsf_api else "Guardado") if etapa else "—",
-                "Avance": None if av is None else round(av * 100),
-            }
-        )
-        filas.append(fila)
-    return pd.DataFrame(filas)
-
-
-def fila_elegida(evento: object) -> int | None:
-    filas = getattr(getattr(evento, "selection", None), "rows", None)
-    return filas[0] if filas else None
-
-
-# ── Pantalla 1: buscador y proyectos en seguimiento ──────────────────────────
+# ── Pantalla 1: búsqueda ─────────────────────────────────────────────────────
 def pantalla_busqueda() -> None:
-    encabezado("Proyectos", "Busca un proyecto para ver o actualizar su estado ante la CAR.")
-    aviso_almacen()
+    encabezado("Proyectos", "Estado en TSF, etapa homologada de su CAR y % de avance.")
     texto = st.text_input(
-        "Buscar proyecto",
-        key=CLAVE_BUSQUEDA,
-        placeholder="Nombre comercial, nombre del proyecto o del terreno",
+        "Buscar proyecto", key=CLAVE_BUSQUEDA, placeholder="Nombre comercial, nombre del proyecto o del terreno"
     ).strip()
     st.session_state[CLAVE_BUSQUEDA_GUARDADA] = texto
-
-    if len(texto) >= 2:
-        try:
-            resultados, n_terrenos, errores = proyectos_busqueda(texto)
-        except ErrorApiUnergy as exc:
-            st.error(f"No fue posible buscar: {exc.mensaje}")
-            return
-        if resultados.empty:
-            st.info("No se encontraron proyectos con ese texto.")
-            return
-        extra = (
-            f" Se muestran los primeros {ajustes.BUSQUEDA_MAX_TERRENOS} terrenos; escribe algo más específico."
-            if n_terrenos > ajustes.BUSQUEDA_MAX_TERRENOS
-            else ""
-        )
-        st.caption(f"{len(resultados)} proyecto(s) en {min(n_terrenos, ajustes.BUSQUEDA_MAX_TERRENOS)} terreno(s). "
-                   f"Selecciona uno para actualizar su estado.{extra}")
-        evento = st.dataframe(
-            vista_estados(resultados, con_tsf_api=True), hide_index=True, width="stretch", on_select="rerun",
-            selection_mode="single-row", column_config={"Avance": COLUMNA_AVANCE},
-            key=f"tabla_busqueda_{version()}",
-        )
-        for e in errores:
-            st.caption(f"⚠️ {e}")
-        i = fila_elegida(evento)
-        if i is not None:
-            f = resultados.iloc[i]
-            abrir(f[Columna.TERRENO_ID.value], f[Columna.MINIFARM_ID.value])
-            st.rerun()
+    if len(texto) < 2:
+        st.info("Escribe al menos dos letras para buscar (ej. COLCEST193 o AGUACHICA).")
         return
-
-    st.subheader("Proyectos en seguimiento")
-    tabla, _ = tabla_seguimiento()
-    if tabla.empty:
-        st.info("Busca un proyecto arriba para empezar su seguimiento.")
-        return
-    f1, f2 = st.columns(2)
-    sel_car = f1.multiselect("CAR", sorted(tabla[Columna.CAR.value].replace("", "Sin identificar").unique()))
-    sel_etapa = f2.multiselect("Estado", sorted(tabla["etapa_actual"].replace("", "Sin registrar").unique()))
-    if sel_car:
-        tabla = tabla[tabla[Columna.CAR.value].replace("", "Sin identificar").isin(sel_car)]
-    if sel_etapa:
-        tabla = tabla[tabla["etapa_actual"].replace("", "Sin registrar").isin(sel_etapa)]
-    evento = st.dataframe(
-        vista_estados(tabla, con_tsf_api=False), hide_index=True, width="stretch", on_select="rerun",
-        selection_mode="single-row", column_config={"Avance": COLUMNA_AVANCE},
-        key=f"tabla_seguimiento_{version()}",
-    )
-    st.caption("Selecciona una fila para ver el detalle, o escribe arriba para buscar otro proyecto.")
-    i = fila_elegida(evento)
-    if i is not None:
-        fila = tabla.iloc[i]
-        if not fila[Columna.TERRENO_ID.value]:
-            st.warning("Este registro no tiene terreno guardado. Búscalo por nombre y guárdalo de nuevo.")
-            return
-        abrir(fila[Columna.TERRENO_ID.value], fila[Columna.MINIFARM_ID.value])
-        st.rerun()
-
-
-# ── Pantalla 2: proyectos (Minifarms) de un terreno ──────────────────────────
-def cargar_terreno(terreno_id: str) -> pd.DataFrame | None:
     try:
-        return minifarms_terreno(terreno_id)
+        resultados, n_terrenos, errores = proyectos_busqueda(texto)
     except ErrorApiUnergy as exc:
-        st.error(f"No fue posible leer el terreno: {exc.mensaje}")
-        return None
-
-
-def pantalla_terreno(terreno_id: str) -> None:
-    st.button("← Volver a la búsqueda", on_click=volver)
-    tabla = cargar_terreno(terreno_id)
-    if tabla is None:
+        st.error(f"No fue posible buscar: {exc.mensaje}")
         return
-    if tabla.empty:
-        st.info("Este terreno no tiene proyectos (Minifarms) en la API.")
+    if resultados.empty:
+        st.info("No se encontraron proyectos con ese texto.")
         return
-    if len(tabla) == 1:
-        abrir(terreno_id, tabla.iloc[0][Columna.MINIFARM_ID.value])
-        st.rerun()
-    encabezado(
-        str(tabla.iloc[0][Columna.TERRENO_NOMBRE.value]),
-        f"{tabla.iloc[0][Columna.UBICACION.value]} · {len(tabla)} proyectos. Selecciona uno.",
-        "🗺️",
+    extra = (
+        f" Se muestran los primeros {ajustes.BUSQUEDA_MAX_TERRENOS} terrenos; escribe algo más específico."
+        if n_terrenos > ajustes.BUSQUEDA_MAX_TERRENOS
+        else ""
     )
-    vista = vista_estados(tabla, con_tsf_api=True).drop(columns=["Terreno"])
+    st.caption(
+        f"{len(resultados)} proyecto(s) en {min(n_terrenos, ajustes.BUSQUEDA_MAX_TERRENOS)} terreno(s). "
+        f"Selecciona uno para ver el detalle.{extra}"
+    )
     evento = st.dataframe(
-        vista, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row",
-        column_config={"Avance": COLUMNA_AVANCE},
-        key=f"tabla_terreno_{terreno_id}_{version()}",
+        vista(resultados), hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row",
+        column_config={"Avance": COLUMNA_AVANCE}, key=f"tabla_busqueda_{st.session_state.get(CLAVE_VERSION, 0)}",
     )
-    i = fila_elegida(evento)
-    if i is not None:
-        abrir(terreno_id, tabla.iloc[i][Columna.MINIFARM_ID.value])
+    for e in errores:
+        st.caption(f"⚠️ {e}")
+    filas = getattr(getattr(evento, "selection", None), "rows", None)
+    if filas:
+        f = resultados.iloc[filas[0]]
+        abrir(f[Columna.TERRENO_ID.value], f[Columna.MINIFARM_ID.value])
         st.rerun()
 
 
-# ── Pantalla 3: detalle editable de un proyecto ──────────────────────────────
+# ── Pantalla 2: detalle ──────────────────────────────────────────────────────
 def pantalla_detalle(terreno_id: str, mid: str) -> None:
     st.button("← Volver a la búsqueda", on_click=volver)
-    tabla = cargar_terreno(terreno_id)
-    if tabla is None:
+    try:
+        tabla = minifarms_terreno(terreno_id)
+    except ErrorApiUnergy as exc:
+        st.error(f"No fue posible leer el terreno: {exc.mensaje}")
         return
     coincide = tabla[tabla[Columna.MINIFARM_ID.value] == mid]
     if coincide.empty:
         st.warning("Este proyecto ya no aparece en el terreno consultado.")
         return
     fila = coincide.iloc[0]
-    if len(tabla) > 1:
-        st.button("← Otros proyectos de este terreno", on_click=ver_terreno, args=(terreno_id,))
-
-    seg_actual = seguimientos().get(mid)
-    hoy = hoy_colombia()
+    car = fila[Columna.CAR.value] if isinstance(fila[Columna.CAR.value], str) else None
+    estado = str(fila[Columna.ESTADO_FORESTAL.value] or "")
+    h = homologar(car, estado)
 
     encabezado(str(fila[Columna.NOMBRE.value]), f"Terreno {fila[Columna.TERRENO_NOMBRE.value]} · {fila[Columna.UBICACION.value]}")
 
-    info, car_col = st.columns([1.2, 1])
-    with info:
+    izq, der = st.columns([1, 1.2])
+    with izq:
+        with st.container(border=True):
+            st.markdown("**Estado**")
+            st.markdown("TSF: " + etiqueta_estado_unergy(estado), unsafe_allow_html=True)
+            if h.clara:
+                st.markdown(f"Etapa en {car}: **{h.etapas[0]}**")
+                st.markdown(barra_avance(h.avance_min, f"Avance: {h.avance_min:.0%}"), unsafe_allow_html=True)
+            elif h.etapas:
+                posibles = " o ".join(f"«{e}»" for e in h.etapas)
+                st.markdown(f"Etapa en {car}: puede ser {posibles}")
+                st.caption(f"Avance entre {h.avance_min:.0%} y {h.avance_max:.0%}: TSF no permite distinguirlas.")
+            elif not car:
+                _, mensaje = identificar_car(str(fila[Columna.MUNICIPIO.value]), str(fila[Columna.DEPARTAMENTO.value]))
+                st.caption(f"Sin CAR identificada, no se puede homologar. {mensaje}")
+            elif car not in FLUJOS:
+                st.caption(f"{car} no tiene flujo configurado en config/flujos.py.")
+            elif not estado:
+                st.caption("La API no trae un estado TSF reconocible para este proyecto.")
+            else:
+                st.caption(f"«{estado}» no tiene equivalente en las etapas de {car}.")
         with st.container(border=True):
             st.markdown("**Proyecto**")
-            st.markdown(
-                "Estado forestal (Unergy): " + etiqueta_estado_unergy(str(fila[Columna.ESTADO_FORESTAL.value])),
-                unsafe_allow_html=True,
-            )
-            if fila[Columna.CAMPO_ESTADO.value]:
-                st.caption(f"Leído del campo `{fila[Columna.CAMPO_ESTADO.value]}` de la API.")
-            else:
-                st.caption(
-                    "La API no trae un estado forestal reconocible para este proyecto. "
-                    "Usa «Explorar API → 3» para ubicar dónde viene."
-                )
             datos = {
-                "Minifarm": fila[Columna.MINIFARM_ID.value],
-                "Project id": fila[Columna.PROJECT_ID.value],
-                "Terreno (id)": f"{fila[Columna.TERRENO_NOMBRE.value]} ({fila[Columna.TERRENO_ID.value]})",
-                "Árboles": fila[Columna.ARBOLES.value],
+                "CAR": car or "Sin identificar",
                 "Estado general": fila[Columna.ETAPA_API.value],
                 "Tipo de permiso": fila[Columna.TIPO_PERMISO.value],
-                "Resolución de licencia": fila[Columna.RESOLUCION_LICENCIA.value],
+                "Árboles": fila[Columna.ARBOLES.value],
                 "Operador de red": fila[Columna.OPERADOR_RED.value],
+                "Minifarm (id)": fila[Columna.MINIFARM_ID.value],
+                "Terreno (id)": fila[Columna.TERRENO_ID.value],
             }
             st.markdown("\n".join(f"- {k}: {v or '—'}" for k, v in datos.items()))
-
-    with car_col:
+    with der:
         with st.container(border=True):
-            st.markdown("**Autoridad ambiental**")
-            car_auto, mensaje = identificar_car(
-                str(fila[Columna.MUNICIPIO.value]), str(fila[Columna.DEPARTAMENTO.value])
-            )
-            st.caption(mensaje)
-            if car_auto and car_auto not in FLUJOS:
-                st.warning(f"{car_auto} no tiene flujo configurado en config/flujos.py.")
-            opcion_auto = f"Automática ({car_auto})" if car_auto else "Sin identificar"
-            opciones = [opcion_auto, *cars_con_flujo()]
-            manual = seg_actual.car_manual if seg_actual else ""
-            eleccion = st.selectbox(
-                "CAR del trámite", opciones, index=opciones.index(manual) if manual in opciones else 0,
-                key=f"car_{mid}",
-            )
-            car_manual = "" if eleccion == opcion_auto else eleccion
-            car = car_manual or car_auto
-            if not car:
-                st.info("Selecciona la CAR para poder hacer el seguimiento.")
-
-    flujo = obtener_flujo(car)
-    if not flujo:
-        return
-
-    nombres = [e.nombre for e in flujo]
-    fechas_previas = {k: v for k, v in (seg_actual.fechas if seg_actual else {}).items() if k in nombres}
-    with st.form(f"form_{mid}_{car}"):
-        st.markdown("**Estado del trámite**")
-        estado_api = str(fila[Columna.ESTADO_FORESTAL.value] or "")
-        desde_tsf = etapa_desde_tsf(car, estado_api)
-        etapa_previa = seg_actual.etapa_actual if seg_actual and seg_actual.etapa_actual in nombres else None
-        etapa_mostrada = desde_tsf or etapa_previa
-        etapa = st.selectbox(
-            "Etapa actual (la última que ya ocurrió)", nombres,
-            index=nombres.index(etapa_mostrada) if etapa_mostrada else None, placeholder="Selecciona la etapa",
-            disabled=bool(desde_tsf),
-        )
-        if desde_tsf:
-            st.caption(f"Tomada de TSF: «{estado_api}» equivale a «{desde_tsf}» en {car}. Se actualiza desde la plataforma.")
-        else:
-            if estado_api:
-                st.caption(f"TSF: «{estado_api}» no tiene una homologación clara en {car}; registra la etapa a mano.")
-            if etapa_previa:
-                st.caption(f"En TSF corresponde a «{estado_tsf(car, etapa_previa)}».")
-        st.caption(
-            "Fechas en que ocurrió cada etapa. Llena solo las que conozcas; la fecha de hoy no se asume. "
-            "Las marcadas con ⏱ tienen histórico y mueven la cuenta regresiva."
-        )
-        columnas = st.columns(3)
-        nuevas: dict[str, date] = {}
-        for i, e in enumerate(flujo):
-            valor = columnas[i % 3].date_input(
-                f"{'⏱ ' if e.hito else ''}{e.nombre}", value=fechas_previas.get(e.nombre),
-                max_value=hoy, format="DD/MM/YYYY", key=f"f_{mid}_{car}_{i}",
-            )
-            if isinstance(valor, date):
-                nuevas[e.nombre] = valor
-        guardar = st.form_submit_button("Guardar", type="primary")
-
-    if guardar:
-        errores = [] if etapa else ["Selecciona la etapa actual."]
-        errores += validar_fechas(car, etapa, nuevas, hoy)
-        if errores:
-            st.error("No se guardó:\n\n" + "\n".join(f"- {e}" for e in errores))
-        else:
-            nuevo = Seguimiento(
-                minifarm_id=mid, nombre=str(fila[Columna.NOMBRE.value]), car_manual=car_manual,
-                etapa_actual=etapa or "", fechas=nuevas, actualizado_en=ahora_texto(), car=car or "",
-                terreno_id=str(terreno_id), terreno_nombre=str(fila[Columna.TERRENO_NOMBRE.value]),
-                ubicacion=str(fila[Columna.UBICACION.value]),
-            )
-            cambios = calcular_cambios(seg_actual, nuevo)
-            if not cambios and seg_actual and seg_actual.terreno_id:
-                st.info("No hay cambios para guardar.")
+            st.markdown(f"**Etapas de {car}**" if car in FLUJOS else "**Etapas**")
+            etapas = nombres_etapas(car)
+            if etapas:
+                st.markdown(linea_de_etapas(etapas, h.etapas), unsafe_allow_html=True)
             else:
-                try:
-                    almacen().guardar(nuevo, cambios)
-                except Exception as exc:
-                    st.error(f"No se pudo guardar ({type(exc).__name__}). Intenta de nuevo.")
-                else:
-                    st.session_state[CLAVE_SEGUIMIENTOS][mid] = nuevo
-                    st.toast("Seguimiento guardado", icon="✅")
-                    st.rerun()
-
-    if desde_tsf:  # la etapa de TSF manda; las fechas siguen siendo las registradas
-        seg_pred = Seguimiento(mid, etapa_actual=desde_tsf, fechas=seg_actual.fechas if seg_actual else {})
-    else:
-        seg_pred = seg_actual
-    pred = prediccion_de(car, seg_pred)
-    avances(pred)
-    with st.expander("Tiempos estimados (cuenta regresiva y resolución)"):
-        a, b = st.columns(2)
-        with a:
-            tarjeta_cuenta_regresiva(pred)
-        with b:
-            tarjeta_resolucion(pred)
-        for aviso in pred.avisos:
-            st.caption(f"ℹ️ {aviso}")
-
-    if fechas_previas:
-        st.markdown("**Historial de etapas**")
-        filas_hist = []
-        anterior: date | None = None
-        for e in flujo:
-            f = fechas_previas.get(e.nombre)
-            if f is None:
-                continue
-            filas_hist.append(
-                {
-                    "Etapa": e.nombre,
-                    "Fecha": formato_fecha(f),
-                    "Días desde la anterior": dias_entre(anterior, f, ajustes.UNIDAD_DIAS) if anterior else None,
-                }
-            )
-            anterior = f
-        st.dataframe(pd.DataFrame(filas_hist), hide_index=True, width="stretch")
-    if seg_actual and seg_actual.actualizado_en:
-        st.caption(f"Última actualización: {seg_actual.actualizado_en}")
+                st.caption("Sin flujo para mostrar.")
 
 
-# ── Enrutador de la página ───────────────────────────────────────────────────
 terreno = st.session_state.get(CLAVE_TERRENO)
 minifarm = st.session_state.get(CLAVE_MINIFARM)
 if terreno and minifarm:
     pantalla_detalle(terreno, minifarm)
-elif terreno:
-    pantalla_terreno(terreno)
 else:
     pantalla_busqueda()

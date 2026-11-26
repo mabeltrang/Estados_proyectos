@@ -15,3 +15,7 @@ Esta herramienta la mantiene una persona no desarrolladora, reutiliza código Py
 ## Desviaciones del estándar
 Sin Nuxt, sin Supabase, sin RLS. Si la herramienta pasa a uso amplio o a datos de personas,
 revisar con tecnología y migrar.
+
+## Actualización (2026-11)
+La app pasó a ser de solo lectura (estado TSF → etapa homologada → % de avance). Se eliminó Google
+Sheets: no hay datos propios que guardar.

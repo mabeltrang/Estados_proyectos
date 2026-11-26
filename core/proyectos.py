@@ -12,9 +12,9 @@ import pandas as pd
 
 from config.ajustes import CAMPOS_ESTADO_FORESTAL
 from config.car_lookup import obtener_car
-from config.constantes import Columna, FuenteCar
+from config.constantes import Columna, FuenteCar, TipoHomologacion
 from config.flujos import FLUJOS
-from config.homologacion import estado_canonico
+from config.homologacion import estado_canonico, homologar
 from core.api_unergy import ClienteUnergy, ErrorApiUnergy, JsonObj
 
 COLUMNAS_PROYECTO: list[str] = [
@@ -167,4 +167,38 @@ def asignar_car(tabla: pd.DataFrame, cars_manuales: dict[str, str]) -> pd.DataFr
     tabla[Columna.CAR] = cars
     tabla[Columna.CAR_FUENTE] = fuentes
     tabla["car_con_flujo"] = tabla[Columna.CAR].map(lambda c: isinstance(c, str) and c in FLUJOS)
+    return tabla
+
+
+def _porcentaje(valor: float | None) -> str:
+    return "—" if valor is None else f"{valor * 100:.0f} %"
+
+
+def agregar_homologacion(tabla: pd.DataFrame) -> pd.DataFrame:
+    """Traduce el estado TSF de cada proyecto a la etapa de su CAR y calcula el avance.
+    Solo lectura: nada se guarda ni se elige por el usuario."""
+    tabla = tabla.copy()
+    etapas, tipos, avances, textos = [], [], [], []
+    for _, fila in tabla.iterrows():
+        car = fila[Columna.CAR] if isinstance(fila[Columna.CAR], str) else None
+        h = homologar(car, str(fila[Columna.ESTADO_FORESTAL] or ""))
+        if h.clara:
+            etapas.append(h.etapas[0])
+            tipos.append(TipoHomologacion.CLARA)
+            avances.append(round(h.avance_min * 100))
+            textos.append(_porcentaje(h.avance_min))
+        elif h.etapas:
+            etapas.append(" / ".join(h.etapas))
+            tipos.append(TipoHomologacion.VARIAS)
+            avances.append(None)
+            textos.append(f"{h.avance_min * 100:.0f}–{h.avance_max * 100:.0f} %")
+        else:
+            etapas.append("")
+            tipos.append(TipoHomologacion.SIN)
+            avances.append(None)
+            textos.append("—")
+    tabla[Columna.ETAPA_HOMOLOGADA] = etapas
+    tabla[Columna.HOMOLOGACION] = tipos
+    tabla[Columna.AVANCE] = avances
+    tabla[Columna.AVANCE_TEXTO] = textos
     return tabla

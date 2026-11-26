@@ -1,11 +1,11 @@
 """Equivalencia entre las etapas de cada CAR (las de esta app) y los estados forestales de TSF
 (la plataforma de donde la API toma los datos).
 
-Se usa en los dos sentidos, SOLO cuando la equivalencia es clara:
-- TSF → etapa: si el estado que trae la API corresponde a UNA sola etapa del flujo de esa CAR, esa
-  es la etapa del proyecto (origen «TSF»). Si corresponde a varias (ej. «Liquidación» en CARSUCRE
-  puede ser la evaluación o la tasa) o a ninguna, la etapa la registras tú (origen «Manual»).
-- Etapa → TSF: para lo registrado a mano, la app muestra qué estado le corresponde en TSF.
+La app lee el estado de TSF (API) y lo traduce a la etapa del flujo de la CAR del proyecto:
+- Si el estado corresponde a UNA sola etapa, la homologación es clara: esa etapa y su % de avance.
+- Si corresponde a varias (ej. «Liquidación» en CARSUCRE: evaluación o tasa), no se elige ninguna:
+  se muestran las posibles y el rango de avance.
+- Si no corresponde a ninguna (ej. «Requerimientos»), queda «Sin homologación».
 
 CÓMO EDITAR: cambia el estado TSF de una etapa en ETAPA_A_TSF. Si una CAR necesita algo distinto,
 agrégalo en ETAPA_A_TSF_POR_CAR. Toda etapa de config/flujos.py debe tener equivalencia
@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass
 
-from config.flujos import obtener_flujo
+from config.flujos import avance, obtener_flujo
 
 def normalizar_texto(valor: str) -> str:
     texto = "".join(c for c in unicodedata.normalize("NFKD", str(valor)) if not unicodedata.combining(c))
@@ -90,11 +91,30 @@ def estado_tsf(car: str | None, etapa: str | None) -> str:
     return propio.get(etapa) or ETAPA_A_TSF.get(etapa, "")
 
 
-def etapa_desde_tsf(car: str | None, estado_api: str) -> str | None:
-    """Etapa del flujo de la CAR que corresponde al estado TSF, solo si es una sola. Si no, None."""
+@dataclass(frozen=True)
+class Homologacion:
+    estado: str                # estado TSF reconocido ("" si no es un estado de TSF)
+    etapas: tuple[str, ...]    # etapas posibles en el flujo de la CAR (1 = homologación clara)
+    avance_min: float | None   # avance (0 a 1) de la primera etapa posible
+    avance_max: float | None   # avance (0 a 1) de la última etapa posible
+
+    @property
+    def clara(self) -> bool:
+        return len(self.etapas) == 1
+
+
+def homologar(car: str | None, estado_api: str) -> Homologacion:
     estado = estado_canonico(estado_api) if estado_api else None
     flujo = obtener_flujo(car)
     if not estado or not flujo:
-        return None
-    candidatas = [e.nombre for e in flujo if estado_tsf(car, e.nombre) == estado]
-    return candidatas[0] if len(candidatas) == 1 else None
+        return Homologacion(estado or "", (), None, None)
+    etapas = tuple(e.nombre for e in flujo if estado_tsf(car, e.nombre) == estado)
+    if not etapas:
+        return Homologacion(estado, (), None, None)
+    return Homologacion(estado, etapas, avance(car, etapas[0]), avance(car, etapas[-1]))
+
+
+def etapa_desde_tsf(car: str | None, estado_api: str) -> str | None:
+    """Etapa que corresponde al estado TSF, solo si la homologación es clara."""
+    h = homologar(car, estado_api)
+    return h.etapas[0] if h.clara else None

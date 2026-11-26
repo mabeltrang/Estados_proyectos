@@ -111,19 +111,8 @@ class SecretKey(StrEnum):
     SECCION_UNERGY = "unergy"
     API_KEY = "api_key"
     BASE_URL = "base_url"
-    SECCION_GSHEETS = "gsheets"
-    SPREADSHEET_URL = "spreadsheet_url"
-    SECCION_CUENTA_SERVICIO = "gcp_service_account"
     SECCION_APP = "app"
     PASSWORD = "password"
-
-
-class Hoja(StrEnum):
-    """Pestañas del Google Sheet donde se guarda el seguimiento manual."""
-
-    SEGUIMIENTO = "seguimiento"
-    FECHAS = "fechas_etapas"
-    HISTORIAL = "historial_cambios"
 
 
 class Columna(StrEnum):
@@ -144,6 +133,10 @@ class Columna(StrEnum):
     ESTADO_FORESTAL = "estado_forestal"
     CAMPO_ESTADO = "campo_estado_forestal"   # de qué campo de la API salió el estado
     TIPO_PERMISO = "tipo_permiso"            # forestry_licence (ej. "Licencia de aprovechamiento forestal")
+    ETAPA_HOMOLOGADA = "etapa_homologada"    # etapa clara, o las posibles separadas por « / »
+    HOMOLOGACION = "homologacion"            # clara | varias | sin
+    AVANCE = "avance"                        # 0 a 100 (solo si la homologación es clara)
+    AVANCE_TEXTO = "avance_texto"            # "43 %", "29–43 %" o "—"
     RESOLUCION_LICENCIA = "resolucion_licencia"
     OPERADOR_RED = "operador_red"
     # histórico
@@ -160,3 +153,9 @@ class FuenteCar(StrEnum):
     MANUAL = "manual"
     AUTOMATICA = "automatica"
     NO_IDENTIFICADA = "no_identificada"
+
+
+class TipoHomologacion(StrEnum):
+    CLARA = "clara"
+    VARIAS = "varias"
+    SIN = "sin"

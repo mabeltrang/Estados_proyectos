@@ -43,8 +43,8 @@ if errores_config:
 
 pagina = st.navigation(
     [
-        st.Page("paginas/vista_general.py", title="Vista general", icon="🧭", default=True),
-        st.Page("paginas/proyectos.py", title="Proyectos", icon="🌳"),
+        st.Page("paginas/proyectos.py", title="Proyectos", icon="🌳", default=True),
+        st.Page("paginas/vista_general.py", title="Resumen general", icon="🧭"),
         st.Page("paginas/historico.py", title="Histórico y calidad de datos", icon="📚"),
         st.Page("paginas/explorar_api.py", title="Explorar API", icon="🔌"),
     ]
