@@ -1,0 +1,8 @@
+streamlit>=1.50
+pandas>=2.2
+numpy>=1.26
+openpyxl>=3.1
+altair>=5.0
+requests>=2.31
+gspread>=6.1
+google-auth>=2.29
