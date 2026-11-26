@@ -132,6 +132,7 @@ class Columna(StrEnum):
     ARBOLES = "arboles"
     ESTADO_FORESTAL = "estado_forestal"
     CAMPO_ESTADO = "campo_estado_forestal"   # de qué campo de la API salió el estado
+    VALOR_CAMPO_ESTADO = "valor_campo_estado"  # texto crudo del campo configurado (para diagnosticar)
     TIPO_PERMISO = "tipo_permiso"            # forestry_licence (ej. "Licencia de aprovechamiento forestal")
     ETAPA_HOMOLOGADA = "etapa_homologada"    # etapa clara, o las posibles separadas por « / »
     HOMOLOGACION = "homologacion"            # clara | varias | sin

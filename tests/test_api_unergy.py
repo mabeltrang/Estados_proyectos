@@ -120,3 +120,11 @@ def test_filas_traen_tipo_de_permiso_y_estado():
     fila = minifarms_de_terreno(detalle)[0]
     assert fila["tipo_permiso"] == "Licencia de aprovechamiento forestal"
     assert fila["estado_forestal"] == "Respuesta a requerimientos"
+
+
+def test_valor_crudo_para_diagnosticar():
+    detalle = {"id": 7, "name": "T", "location": "Paipa, Boyacá", "minifarms": [
+        {"id": 1, "name": "P1", "forestry_license_resolution": "RES-0702"}, {"id": 2, "name": "P2"}]}
+    filas = minifarms_de_terreno(detalle)
+    assert filas[0]["estado_forestal"] == "" and filas[0]["valor_campo_estado"] == "forestry_license_resolution: RES-0702"
+    assert filas[1]["valor_campo_estado"] == "forestry_license_resolution: no viene en la API"

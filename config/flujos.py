@@ -18,6 +18,7 @@ Supuestos que puedes cambiar aquí mismo:
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 
 from config.constantes import ORDEN_HITOS, Hito
@@ -139,6 +140,14 @@ FLUJOS: dict[str, tuple[Etapa, ...]] = {
         Etapa("Pago tasa de aprovechamiento"),
         RESOLUCION,
     ),
+    "CORPOBOYACA": (
+        INVENTARIO,
+        INFORMES,
+        Etapa("Radicado", Hito.RADICADO),
+        Etapa("Auto", Hito.AUTO),
+        Etapa("Visita", Hito.VISITA),
+        RESOLUCION,
+    ),
     "CVS": (
         INVENTARIO,
         INFORMES,
@@ -155,10 +164,17 @@ def cars_con_flujo() -> list[str]:
     return sorted(FLUJOS)
 
 
+def codigo_car(car: object) -> str:
+    """'CorpoBoyacá ' → 'CORPOBOYACA' (sin tildes ni espacios), para comparar con FLUJOS."""
+    if not isinstance(car, str):
+        return ""
+    sin_tildes = "".join(c for c in unicodedata.normalize("NFKD", car) if not unicodedata.combining(c))
+    return sin_tildes.strip().upper().replace(" ", "")
+
+
 def obtener_flujo(car: object) -> tuple[Etapa, ...] | None:
-    if not isinstance(car, str) or not car:
-        return None
-    return FLUJOS.get(car.strip().upper())
+    codigo = codigo_car(car)
+    return FLUJOS.get(codigo) if codigo else None
 
 
 def nombres_etapas(car: str | None) -> list[str]:

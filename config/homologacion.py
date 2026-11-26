@@ -18,6 +18,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from config.constantes import Hito
 from config.flujos import avance, obtener_flujo
 
 def normalizar_texto(valor: str) -> str:
@@ -39,6 +40,7 @@ ESTADOS_UNERGY: tuple[str, ...] = (
     "Solicitud rechazada",
     "Exonerado",
     "Pausado",
+    "No solicitada",
 )
 
 ETAPA_A_TSF: dict[str, str] = {
@@ -65,6 +67,15 @@ ETAPA_A_TSF: dict[str, str] = {
     "Visita técnica": "Visita",
     "Acta": "Visita",
     "Resolución": "Solicitud aprobada",
+}
+
+# Estados TSF que se leen igual en todas las CAR: van directo a la etapa que tiene ese hito.
+# Mandan sobre ETAPA_A_TSF (ej. «Solicitud radicada» es Radicado/Radicación, no un auto).
+# «Solicitud rechazada» también es la resolución: el trámite terminó (sin permiso).
+TSF_DIRECTOS: dict[str, Hito] = {
+    "Solicitud radicada": Hito.RADICADO,
+    "Solicitud aprobada": Hito.RESOLUCION,
+    "Solicitud rechazada": Hito.RESOLUCION,
 }
 
 # Excepciones por CAR: {"CAR": {"Etapa": "Estado TSF"}}
@@ -108,7 +119,11 @@ def homologar(car: str | None, estado_api: str) -> Homologacion:
     flujo = obtener_flujo(car)
     if not estado or not flujo:
         return Homologacion(estado or "", (), None, None)
-    etapas = tuple(e.nombre for e in flujo if estado_tsf(car, e.nombre) == estado)
+    directa = next((e.nombre for e in flujo if estado in TSF_DIRECTOS and e.hito == TSF_DIRECTOS[estado]), None)
+    if directa:
+        etapas: tuple[str, ...] = (directa,)
+    else:
+        etapas = tuple(e.nombre for e in flujo if estado_tsf(car, e.nombre) == estado)
     if not etapas:
         return Homologacion(estado, (), None, None)
     return Homologacion(estado, etapas, avance(car, etapas[0]), avance(car, etapas[-1]))

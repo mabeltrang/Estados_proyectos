@@ -3,7 +3,7 @@ from config.flujos import FLUJOS, nombres_etapas, validar_flujos
 
 ETAPAS_ESPERADAS = {
     "CORPOCESAR": 8, "CARSUCRE": 8, "CRA": 9, "CORPAMAG": 8, "CORPOGUAJIRA": 7, "CORTOLIMA": 6,
-    "CORPOCALDAS": 7, "CDMB": 8, "CAS": 7, "CSB": 7, "CORPOMOJANA": 8, "CVS": 7,
+    "CORPOCALDAS": 7, "CDMB": 8, "CAS": 7, "CSB": 7, "CORPOMOJANA": 8, "CVS": 7, "CORPOBOYACA": 6,
 }
 
 
@@ -28,3 +28,8 @@ def test_desplegable_solo_muestra_etapas_de_su_car():
 
 def test_todas_terminan_en_resolucion():
     assert all(f[-1].hito == Hito.RESOLUCION for f in FLUJOS.values())
+
+
+def test_nombre_de_car_con_tilde():
+    from config.flujos import obtener_flujo
+    assert obtener_flujo("CORPOBOYACÁ") is FLUJOS["CORPOBOYACA"]

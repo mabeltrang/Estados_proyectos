@@ -13,7 +13,7 @@ def cargar():
 def test_lee_excel_real_sin_columnas_faltantes():
     h = cargar()
     assert h.hojas_usadas and not h.columnas_faltantes
-    assert set(h.tramites["car"]) <= {"CORPOCESAR", "CORPOGUAJIRA"}
+    assert set(h.tramites["car"]) <= {"CORPOCESAR", "CORPOGUAJIRA", "CORPOBOYACA"}
     assert len(h.tramites) > 0
 
 

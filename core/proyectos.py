@@ -13,14 +13,14 @@ import pandas as pd
 from config.ajustes import CAMPOS_ESTADO_FORESTAL
 from config.car_lookup import obtener_car
 from config.constantes import Columna, FuenteCar, TipoHomologacion
-from config.flujos import FLUJOS
+from config.flujos import FLUJOS, codigo_car
 from config.homologacion import estado_canonico, homologar
 from core.api_unergy import ClienteUnergy, ErrorApiUnergy, JsonObj
 
 COLUMNAS_PROYECTO: list[str] = [
     Columna.MINIFARM_ID, Columna.PROJECT_ID, Columna.NOMBRE, Columna.TERRENO_ID, Columna.TERRENO_NOMBRE,
     Columna.UBICACION, Columna.MUNICIPIO, Columna.DEPARTAMENTO, Columna.ETAPA_API, Columna.ARBOLES,
-    Columna.ESTADO_FORESTAL, Columna.CAMPO_ESTADO, Columna.TIPO_PERMISO, Columna.RESOLUCION_LICENCIA,
+    Columna.ESTADO_FORESTAL, Columna.CAMPO_ESTADO, Columna.VALOR_CAMPO_ESTADO, Columna.TIPO_PERMISO, Columna.RESOLUCION_LICENCIA,
     Columna.OPERADOR_RED,
 ]
 
@@ -105,6 +105,10 @@ def minifarms_de_terreno(detalle: JsonObj) -> list[dict[str, object]]:
                 Columna.ARBOLES: a_texto(mf.get("tree_count")),
                 Columna.ESTADO_FORESTAL: estado,
                 Columna.CAMPO_ESTADO: campo,
+                Columna.VALOR_CAMPO_ESTADO: "; ".join(
+                    f"{c}: {a_texto(mf.get(c)) or 'vacío'}" if c in mf else f"{c}: no viene en la API"
+                    for c in CAMPOS_ESTADO_FORESTAL
+                ),
                 Columna.TIPO_PERMISO: a_texto(mf.get("forestry_licence")),
                 Columna.RESOLUCION_LICENCIA: a_texto(mf.get("forestry_license_resolution")),
                 Columna.OPERADOR_RED: a_texto(mf.get("grid_operator")),
@@ -146,7 +150,7 @@ def identificar_car(municipio: str, departamento: str) -> tuple[str | None, str]
         return None, "La ubicación no trae departamento; selecciona la CAR manualmente."
     info = obtener_car(municipio, departamento)
     car = info.get("car")
-    return (str(car).upper() if car else None), str(info.get("mensaje", ""))
+    return (codigo_car(car) if car else None), str(info.get("mensaje", ""))
 
 
 def asignar_car(tabla: pd.DataFrame, cars_manuales: dict[str, str]) -> pd.DataFrame:

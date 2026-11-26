@@ -32,15 +32,19 @@ La tabla `ETAPA_A_TSF` de `config/homologacion.py` dice qué estado de TSF corre
 | Radicado, Radicación, autos y publicaciones | Solicitud radicada |
 | Pagos y liquidaciones (del auto/evaluación o de la tasa) | Liquidación |
 | Visita, Visita técnica, Acta | Visita |
-| Resolución | Solicitud aprobada |
+| Resolución | Solicitud aprobada, y también Solicitud rechazada (el trámite terminó) |
+
+Además, tres estados de TSF se leen igual en todas las CAR y van directo a su etapa:
+**Solicitud radicada** → la etapa de radicado de esa CAR (Radicado o Radicación);
+**Solicitud aprobada** y **Solicitud rechazada** → Resolución.
 
 Con eso, para cada proyecto:
 
 - **Una sola etapa posible** en el flujo de su CAR → esa etapa y su % de avance.
-- **Varias posibles** (ej. «Solicitud radicada» en CORPOCESAR: Radicado o Llega auto) → la app no
-  elige: muestra las posibles y el rango de avance (29–43 %).
-- **Ninguna** (Requerimientos, Respuesta a requerimientos, Respuesta radicado, Pausado, Solicitud
-  rechazada, Exonerado) → «Sin homologación».
+- **Varias posibles** (ej. «Visita» en CORPOCESAR: Visita o Acta) → la app no elige: muestra las
+  posibles y el rango de avance (71–86 %).
+- **Ninguna** (Requerimientos, Respuesta a requerimientos, Respuesta radicado, Pausado, Exonerado,
+  No solicitada) → «Sin homologación».
 
 **Avance** = etapas cumplidas sobre el total de etapas del flujo de esa CAR
 (Inventario = 0 %, Resolución = 100 %).

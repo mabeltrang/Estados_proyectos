@@ -23,7 +23,7 @@ UNIDAD_DIAS = UnidadDias.CALENDARIO
 CATEGORIAS_HISTORICO: tuple[str, ...] = ("Aprovechamiento forestal",)
 
 # CAR que están en el Excel pero no se usan por ahora (ni propias ni en la referencia general).
-CARS_HISTORICO_EXCLUIDAS: frozenset[str] = frozenset({"CORPOBOYACA", "CAR"})
+CARS_HISTORICO_EXCLUIDAS: frozenset[str] = frozenset({"CAR"})
 
 # Fechas por fuera de este rango se reportan como imposibles y no se usan.
 FECHA_MINIMA_VALIDA = date(2000, 1, 1)

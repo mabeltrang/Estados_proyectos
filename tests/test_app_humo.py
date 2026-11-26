@@ -17,7 +17,7 @@ TERRENOS = {
     2: ("Finca B", "Cartagena, Bolívar", [(21, "Solar Bolívar")]),
     3: ("Finca C", "Valledupar, Cesar", [(31, "Solar Programado"), (32, "Solar Aprobado")]),
 }
-ESTADO_TSF = {11: "Solicitud radicada", 21: "Solicitud radicada", 31: "Programado", 32: "Solicitud aprobada"}
+ESTADO_TSF = {11: "Visita", 21: "Solicitud radicada", 31: "Programado", 32: "Solicitud aprobada"}
 
 
 class ApiFalsa(BaseHTTPRequestHandler):
@@ -107,7 +107,7 @@ def test_homologacion_ambigua_no_elige(api):
     at = app(api)
     at.run()
     fila = buscar(at, "solar cesar").iloc[0]
-    assert fila["Etapa homologada"] == "Radicado / Llega auto (29–43 %)"
+    assert fila["Etapa homologada"] == "Visita / Acta (71–86 %)"
     assert pd.isna(fila["Avance"])
 
 

@@ -51,7 +51,10 @@ def vista(tabla: pd.DataFrame) -> pd.DataFrame:
             "Proyecto": tabla[Columna.NOMBRE.value],
             "Terreno": tabla[Columna.TERRENO_NOMBRE.value],
             "CAR": tabla[Columna.CAR.value].fillna("Sin identificar").replace("", "Sin identificar"),
-            "Estado TSF": tabla[Columna.ESTADO_FORESTAL.value].replace("", "No encontrado"),
+            "Estado TSF": [
+                e or f"No reconocido ({v})"
+                for e, v in zip(tabla[Columna.ESTADO_FORESTAL.value], tabla[Columna.VALOR_CAMPO_ESTADO.value])
+            ],
             "Etapa homologada": etapa,
             "Avance": tabla[Columna.AVANCE.value],
         }
@@ -133,9 +136,12 @@ def pantalla_detalle(terreno_id: str, mid: str) -> None:
                 _, mensaje = identificar_car(str(fila[Columna.MUNICIPIO.value]), str(fila[Columna.DEPARTAMENTO.value]))
                 st.caption(f"Sin CAR identificada, no se puede homologar. {mensaje}")
             elif car not in FLUJOS:
-                st.caption(f"{car} no tiene flujo configurado en config/flujos.py.")
+                st.caption(f"{car} no tiene etapas configuradas en config/flujos.py; no se puede homologar.")
             elif not estado:
-                st.caption("La API no trae un estado TSF reconocible para este proyecto.")
+                st.caption(
+                    f"La API no trae un estado TSF reconocible ({fila[Columna.VALOR_CAMPO_ESTADO.value]}). "
+                    "Ubica el campo correcto en «Explorar API → 3»."
+                )
             else:
                 st.caption(f"«{estado}» no tiene equivalente en las etapas de {car}.")
         with st.container(border=True):
