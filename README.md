@@ -11,8 +11,8 @@ usando los tiempos de expedientes anteriores.
 
 ## Cómo se usa
 
-- **Proyectos:** escribe parte del nombre comercial, del proyecto o del terreno. Eliges el terreno,
-  luego el proyecto (si el terreno tiene varios), y ves su estado. «← Volver a la búsqueda» te
+- **Proyectos:** escribe parte del nombre comercial, del proyecto o del terreno y aparecen de una
+  vez todos sus proyectos con estado, avance y equivalencia en TSF. Seleccionas uno para actualizarlo. «← Volver a la búsqueda» te
   regresa con el mismo texto para abrir otro. Sin texto, la página muestra los proyectos que ya
   tienen seguimiento guardado.
 - **Vista general:** resumen de los proyectos en seguimiento. No consulta la API, así que carga rápido.
@@ -87,25 +87,24 @@ streamlit run app.py
 python -m pytest                                              # pruebas
 ```
 
-## Estado forestal de Unergy (homologación provisional)
+## Estado forestal de TSF
 
-La app lee el «Estado forestal» de cada proyecto (columna A. FORESTAL de la plataforma; campo
-`forestry_licence`, configurable en `config/ajustes.py`) y lo muestra con su color.
-Mientras la plataforma no tenga los flujos por CAR, algunos estados se traducen a una etapa:
+- **TSF hoy (API):** se lee solo del campo `forestry_license_resolution` (configurable en
+  `config/ajustes.py`). Si ese valor no es un estado de TSF, aparece «No encontrado». No se revisan
+  otros campos. `forestry_licence` no es el estado: es el tipo de permiso y se muestra aparte.
+- **Estado homologado:** si el estado de TSF corresponde a UNA sola etapa del flujo de la CAR, esa
+  es la etapa del proyecto (origen «TSF», no se edita a mano). Si corresponde a varias o a ninguna,
+  aparece «Sin homologación» y la etapa la registras tú (origen «Manual»).
+- Tabla de equivalencias: `ETAPA_A_TSF` en `config/homologacion.py`.
 
-| Estado en Unergy | Etapa sugerida |
+| Etapas | Estado TSF |
 |---|---|
-| Por radicar | Informes |
-| Solicitud radicada | La etapa de radicado de esa CAR (Radicado / Radicación) |
-| Liquidación | Pago o liquidación de esa CAR (no aplica en CORPOCESAR ni CRA) |
-| Visita | Visita / Visita técnica |
-| Solicitud aprobada | Resolución |
-
-Requerimientos, Respuesta a requerimientos, Respuesta radicado, Programado, Pausado, Solicitud
-rechazada y Exonerado no cambian la etapa: se muestran como aviso.
-
-La etapa sugerida solo preselecciona el desplegable; no se guarda hasta que pulses Guardar, y las
-fechas siguen siendo manuales. Si lo guardado no coincide con Unergy, la app lo advierte.
+| Inventario | Programado (se mandó a inventario) |
+| Informes | Por radicar |
+| Radicado, Radicación, autos y publicaciones | Solicitud radicada |
+| Pagos y liquidaciones (del auto/evaluación o de la tasa) | Liquidación |
+| Visita, Visita técnica, Acta | Visita |
+| Resolución | Solicitud aprobada |
 
 ## Cómo se calcula la predicción
 

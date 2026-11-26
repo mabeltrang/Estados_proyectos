@@ -8,7 +8,7 @@ import streamlit as st
 from config import ajustes
 from config.constantes import Columna, FuenteCar
 from core.api_unergy import ClienteUnergy, ErrorApiUnergy, JsonObj
-from core.proyectos import a_texto, asignar_car, minifarms_de_terreno
+from core.proyectos import a_texto, asignar_car, minifarms_de_terreno, textos_anidados
 from ui.componentes import encabezado
 from ui.datos import crear_cliente, proyectos_api
 
@@ -62,18 +62,40 @@ if st.button("Consultar página 1"):
 
 # 3. Detalle
 st.subheader("3. Detalle de un terreno")
-terreno = st.text_input("Id del terreno")
+c1, c2 = st.columns(2)
+terreno = c1.text_input("Id del terreno")
+buscado = c2.text_input("Texto a ubicar (opcional)", placeholder="Ej. Respuesta a requerimientos, 16913")
 if st.button("Consultar detalle", disabled=not terreno):
     try:
         detalle = cliente.detalle_forestal(terreno)
+        if buscado.strip():
+            aguja = buscado.strip().lower()
+            hallazgos = [
+                {"Campo": ruta, "Valor": texto[:120]}
+                for ruta, texto in textos_anidados(detalle, "detalle")
+                if aguja in texto.lower()
+            ]
+            if hallazgos:
+                st.success(f"«{buscado}» aparece en estos campos del detalle forestal:")
+                st.dataframe(pd.DataFrame(hallazgos), hide_index=True, width="stretch")
+            else:
+                st.warning(f"«{buscado}» no aparece en el detalle forestal de este terreno.")
         st.markdown("Campos del detalle forestal")
         st.dataframe(campos(detalle), hide_index=True, width="stretch")
         mfs = detalle.get("minifarms")
         if isinstance(mfs, list) and mfs and isinstance(mfs[0], dict):
             st.markdown("Campos de la primera Minifarm (así viene `stage`)")
             st.dataframe(campos(mfs[0]), hide_index=True, width="stretch")
-            st.markdown("Minifarms del terreno")
-            st.dataframe(pd.DataFrame(minifarms_de_terreno(detalle)), hide_index=True, width="stretch")
+            st.markdown("Minifarms del terreno y estado forestal detectado")
+            mf_tabla = pd.DataFrame(minifarms_de_terreno(detalle))
+            st.dataframe(
+                mf_tabla[[Columna.NOMBRE, Columna.ESTADO_FORESTAL, Columna.CAMPO_ESTADO, Columna.TIPO_PERMISO, Columna.ETAPA_API]]
+                .rename(columns={Columna.NOMBRE: "Proyecto", Columna.ESTADO_FORESTAL: "Estado forestal detectado",
+                                 Columna.CAMPO_ESTADO: "Campo de la API", Columna.TIPO_PERMISO: "forestry_licence",
+                                 Columna.ETAPA_API: "stage"}),
+                hide_index=True,
+                width="stretch",
+            )
         else:
             st.info("Este terreno no trae Minifarms.")
         try:
@@ -85,8 +107,27 @@ if st.button("Consultar detalle", disabled=not terreno):
     except ErrorApiUnergy as exc:
         st.error(exc.mensaje)
 
-# 4. Todos los proyectos vs. información territorial
-st.subheader("4. Todos los proyectos frente a la tabla de municipios por CAR")
+# 4. Conteo por estado forestal del terreno
+st.subheader("4. Terrenos por estado forestal")
+st.caption("Es el estado del terreno (la etiqueta junto al nombre en la plataforma), no el de cada proyecto.")
+if st.button("Consultar conteo"):
+    try:
+        conteo = cliente.conteo_forestal()
+        if isinstance(conteo, dict):
+            st.dataframe(
+                pd.DataFrame([{"Estado": k, "Terrenos": a_texto(v)} for k, v in conteo.items()]),
+                hide_index=True,
+                width="stretch",
+            )
+        elif isinstance(conteo, list):
+            st.dataframe(pd.DataFrame(conteo), hide_index=True, width="stretch")
+        else:
+            st.write(a_texto(conteo))
+    except ErrorApiUnergy as exc:
+        st.error(exc.mensaje)
+
+# 5. Todos los proyectos vs. información territorial
+st.subheader("5. Todos los proyectos frente a la tabla de municipios por CAR")
 st.caption(f"Recorre todas las páginas ({ajustes.API_PAGE_SIZE} por página) y el detalle de cada terreno.")
 if st.button("Analizar todos los proyectos (puede tardar varios minutos)"):
     try:

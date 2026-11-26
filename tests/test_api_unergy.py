@@ -98,3 +98,25 @@ def test_extraer_minifarms():
     assert filas[0]["etapa_api"] == "Radicado" and filas[0]["departamento"] == "Cesar"
     assert separar_ubicacion("San Juan de Betulia, Sucre") == ("San Juan de Betulia", "Sucre")
     assert separar_ubicacion("Bogotá") == ("Bogotá", "")
+
+
+def test_estado_forestal_no_se_confunde_con_el_tipo_de_permiso():
+    from core.proyectos import detectar_estado_forestal
+
+    licencia = {"forestry_licence": "Licencia de aprovechamiento forestal"}
+    assert detectar_estado_forestal(licencia) == ("", "")
+    assert detectar_estado_forestal({**licencia, "forestry_license_resolution": "Respuesta a requerimiento"}) == (
+        "Respuesta a requerimientos", "forestry_license_resolution")
+    assert detectar_estado_forestal({**licencia, "forestry_license_resolution": {"name": "Visita"}}) == (
+        "Visita", "forestry_license_resolution.name")
+    assert detectar_estado_forestal({**licencia, "system_info": {"forest": {"status": "Pausado"}}}) == ("", "")
+    assert detectar_estado_forestal({**licencia, "stage": "Visita"}) == ("", "")  # stage es el estado general
+
+
+def test_filas_traen_tipo_de_permiso_y_estado():
+    detalle = {"id": 7, "name": "T", "location": "Aguachica, Cesar", "minifarms": [
+        {"id": 1, "name": "P1", "stage": "UCI", "forestry_licence": "Licencia de aprovechamiento forestal",
+         "forestry_license_resolution": "Respuesta a requerimientos"}]}
+    fila = minifarms_de_terreno(detalle)[0]
+    assert fila["tipo_permiso"] == "Licencia de aprovechamiento forestal"
+    assert fila["estado_forestal"] == "Respuesta a requerimientos"

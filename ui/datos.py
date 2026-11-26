@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pandas as pd
 import streamlit as st
 
@@ -9,7 +11,7 @@ from config import ajustes
 from config.constantes import Columna, SecretKey
 from config.flujos import FLUJOS
 from core.almacenamiento import Almacen, GoogleSheetsAlmacen, MemoriaAlmacen, Seguimiento
-from core.api_unergy import ClienteUnergy
+from core.api_unergy import ClienteUnergy, ErrorApiUnergy
 from core.estadisticas import BaseTiempos
 from core.fechas import hoy_colombia
 from core.historico import HistoricoCargado, cargar_historico
@@ -50,8 +52,52 @@ def crear_cliente() -> ClienteUnergy:
 
 
 # ── API (todo bajo demanda: nada se descarga hasta que se busca) ────────────
-@st.cache_data(ttl=ajustes.CACHE_BUSQUEDA_SEGUNDOS, show_spinner="Buscando en la API de Unergy…")
+# Cambia cuando cambian las columnas de las tablas. Al ser parte de la llave de la caché, una
+# actualización del código nunca reutiliza tablas guardadas con el formato anterior.
+ESQUEMA = "|".join(str(c) for c in COLUMNAS_PROYECTO)
+
+
 def buscar_terrenos(texto: str) -> pd.DataFrame:
+    return _buscar_terrenos(texto, ESQUEMA)
+
+
+def minifarms_terreno(terreno_id: str) -> pd.DataFrame:
+    tabla = _minifarms_terreno(terreno_id, ESQUEMA)
+    faltan = [str(c) for c in COLUMNAS_PROYECTO if str(c) not in tabla.columns]
+    return tabla.assign(**{c: "" for c in faltan}) if faltan else tabla
+
+
+def proyectos_busqueda(texto: str) -> tuple[pd.DataFrame, int, list[str]]:
+    """Proyectos (Minifarms) de los terrenos que coinciden con la búsqueda.
+    Devuelve (tabla, terrenos encontrados, errores)."""
+    return _proyectos_busqueda(texto, ESQUEMA)
+
+
+@st.cache_data(ttl=ajustes.CACHE_BUSQUEDA_SEGUNDOS, show_spinner="Cargando los proyectos encontrados…")
+def _proyectos_busqueda(texto: str, esquema: str) -> tuple[pd.DataFrame, int, list[str]]:
+    terrenos = _buscar_terrenos(texto, esquema)
+    ids = list(terrenos[Columna.TERRENO_ID.value])[: ajustes.BUSQUEDA_MAX_TERRENOS]
+    cliente = crear_cliente()
+    errores: list[str] = []
+
+    def traer(terreno_id: str) -> list[dict[str, object]]:
+        try:
+            return minifarms_de_terreno(cliente.detalle_forestal(terreno_id))
+        except ErrorApiUnergy as exc:
+            errores.append(f"Terreno {terreno_id}: {exc.mensaje}")
+            return []
+
+    filas: list[dict[str, object]] = []
+    with ThreadPoolExecutor(max_workers=ajustes.API_HILOS_DETALLE) as pool:
+        for resultado in pool.map(traer, ids):
+            filas.extend(resultado)
+    tabla = pd.DataFrame(filas, columns=COLUMNAS_PROYECTO)
+    tabla.columns = [str(c) for c in tabla.columns]
+    return asignar_car(tabla, {}), len(terrenos), errores
+
+
+@st.cache_data(ttl=ajustes.CACHE_BUSQUEDA_SEGUNDOS, show_spinner="Buscando en la API de Unergy…")
+def _buscar_terrenos(texto: str, esquema: str) -> pd.DataFrame:
     """Busca por nombre comercial (Minifarm), nombre de proyecto o terreno. Pocas consultas."""
     cliente = crear_cliente()
     filas: list[dict[str, object]] = []
@@ -79,7 +125,7 @@ def buscar_terrenos(texto: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=ajustes.CACHE_BUSQUEDA_SEGUNDOS, show_spinner="Cargando proyectos del terreno…")
-def minifarms_terreno(terreno_id: str) -> pd.DataFrame:
+def _minifarms_terreno(terreno_id: str, esquema: str) -> pd.DataFrame:
     detalle = crear_cliente().detalle_forestal(terreno_id)
     tabla = pd.DataFrame(minifarms_de_terreno(detalle), columns=COLUMNAS_PROYECTO)
     tabla.columns = [str(c) for c in tabla.columns]

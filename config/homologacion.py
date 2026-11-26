@@ -1,24 +1,22 @@
-"""Equivalencia provisional entre el «Estado forestal» de la plataforma Unergy y las etapas de cada CAR.
+"""Equivalencia entre las etapas de cada CAR (las de esta app) y los estados forestales de TSF
+(la plataforma de donde la API toma los datos).
 
-Es temporal: sirve para que la app sugiera la etapa mientras la plataforma no tenga los flujos por CAR.
-La etapa sugerida NUNCA se guarda sola: el usuario la revisa y pulsa Guardar.
+Se usa en los dos sentidos, SOLO cuando la equivalencia es clara:
+- TSF → etapa: si el estado que trae la API corresponde a UNA sola etapa del flujo de esa CAR, esa
+  es la etapa del proyecto (origen «TSF»). Si corresponde a varias (ej. «Liquidación» en CARSUCRE
+  puede ser la evaluación o la tasa) o a ninguna, la etapa la registras tú (origen «Manual»).
+- Etapa → TSF: para lo registrado a mano, la app muestra qué estado le corresponde en TSF.
 
-CÓMO EDITAR
------------
-- POR_HITO: estados que equivalen a un hito. Se traducen a la etapa de cada CAR que tiene ese hito
-  (ej. «Solicitud radicada» → «Radicado» en CORPOCESAR, «Radicación» en CVS).
-- POR_ETAPA: estados que equivalen a una etapa con el mismo nombre en todos los flujos.
-- POR_CAR: equivalencias que dependen de la CAR (ej. «Liquidación»). Si una CAR no aparece, no se sugiere nada.
-- SIN_EQUIVALENCIA: estados que se muestran como aviso pero no mueven la etapa.
+CÓMO EDITAR: cambia el estado TSF de una etapa en ETAPA_A_TSF. Si una CAR necesita algo distinto,
+agrégalo en ETAPA_A_TSF_POR_CAR. Toda etapa de config/flujos.py debe tener equivalencia
+(las pruebas lo verifican).
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
 
-from config.constantes import Hito
 from config.flujos import obtener_flujo
 
 def normalizar_texto(valor: str) -> str:
@@ -26,57 +24,51 @@ def normalizar_texto(valor: str) -> str:
     return re.sub(r"\s+", " ", texto).strip().lower()
 
 
-# Orden y nombres tal como aparecen en la plataforma Unergy.
+# Estados forestales de TSF, con el nombre exacto de la plataforma.
 ESTADOS_UNERGY: tuple[str, ...] = (
     "Por radicar",
     "Solicitud radicada",
     "Liquidación",
-    "Requerimientos",
-    "Respuesta a requerimientos",
-    "Respuesta radicado",
     "Programado",
     "Visita",
     "Solicitud aprobada",
+    "Requerimientos",
+    "Respuesta a requerimientos",
+    "Respuesta radicado",
     "Solicitud rechazada",
     "Exonerado",
     "Pausado",
 )
 
-POR_HITO: dict[str, Hito] = {
-    "Solicitud radicada": Hito.RADICADO,
-    "Visita": Hito.VISITA,
-    "Solicitud aprobada": Hito.RESOLUCION,
+ETAPA_A_TSF: dict[str, str] = {
+    # «Programado» en TSF = el proyecto se mandó a inventario.
+    "Inventario": "Programado",
+    "Informes": "Por radicar",
+    "Radicado": "Solicitud radicada",
+    "Radicación": "Solicitud radicada",
+    # Pagos: en TSF todos son «Liquidación» (puede ser la de evaluación/auto o la de la tasa).
+    "Solicitud de liquidación": "Liquidación",
+    "Liquidación servicios": "Liquidación",
+    "Pago evaluación": "Liquidación",
+    "Pagar la evaluación": "Liquidación",
+    "Auto cobro": "Liquidación",
+    "Pago visita y publicación auto": "Liquidación",
+    "Pago tasa de aprovechamiento": "Liquidación",
+    # TSF no tiene estado para autos ni publicaciones: el trámite sigue como radicado.
+    "Llega auto": "Solicitud radicada",
+    "Auto": "Solicitud radicada",
+    "Auto inicio": "Solicitud radicada",
+    "Publicación auto": "Solicitud radicada",
+    "Publicación auto alcaldía": "Solicitud radicada",
+    "Visita": "Visita",
+    "Visita técnica": "Visita",
+    "Acta": "Visita",
+    "Resolución": "Solicitud aprobada",
 }
 
-POR_ETAPA: dict[str, str] = {
-    "Por radicar": "Informes",
-}
+# Excepciones por CAR: {"CAR": {"Etapa": "Estado TSF"}}
+ETAPA_A_TSF_POR_CAR: dict[str, dict[str, str]] = {}
 
-POR_CAR: dict[str, dict[str, str]] = {
-    "Liquidación": {
-        "CARSUCRE": "Pagar la evaluación",
-        "CORPOMOJANA": "Pagar la evaluación",
-        "CORPAMAG": "Liquidación servicios",
-        "CVS": "Liquidación servicios",
-        "CORTOLIMA": "Pago evaluación",
-        "CORPOCALDAS": "Pago evaluación",
-        "CDMB": "Pago evaluación",
-        "CAS": "Pago evaluación",
-        "CSB": "Pago evaluación",
-    },
-}
-
-SIN_EQUIVALENCIA: dict[str, str] = {
-    "Requerimientos": "La CAR hizo requerimientos. El trámite sigue en su etapa; el histórico ya incluye esas esperas.",
-    "Respuesta a requerimientos": "Se respondieron requerimientos de la CAR. El trámite sigue en su etapa.",
-    "Respuesta radicado": "Hay una respuesta radicada ante la CAR. Revisa en qué etapa quedó el trámite.",
-    "Programado": "Actuación programada. Revisa si es la visita u otra etapa.",
-    "Pausado": "Trámite pausado en Unergy. La cuenta regresiva sigue corriendo con el histórico de la CAR.",
-    "Solicitud rechazada": "La CAR rechazó la solicitud. La proyección no aplica.",
-    "Exonerado": "El proyecto quedó exonerado del permiso. La proyección no aplica.",
-}
-
-# Escrituras alternativas que se aceptan (sin tildes ni mayúsculas).
 ALIAS: dict[str, str] = {
     "respuesta a requerimiento": "Respuesta a requerimientos",
     "liquidacion": "Liquidación",
@@ -85,39 +77,24 @@ ALIAS: dict[str, str] = {
 _CANONICOS = {normalizar_texto(e): e for e in ESTADOS_UNERGY}
 
 
-@dataclass(frozen=True)
-class Homologacion:
-    estado: str           # estado tal como se reconoció ("" si no se reconoció)
-    etapa: str | None     # etapa sugerida del flujo de la CAR
-    nota: str             # explicación para mostrar
-
-
 def estado_canonico(texto: str) -> str | None:
     clave = normalizar_texto(texto)
     return _CANONICOS.get(clave) or ALIAS.get(clave)
 
 
-def homologar(car: str | None, estado_unergy: str) -> Homologacion:
-    if not estado_unergy.strip():
-        return Homologacion("", None, "")
-    estado = estado_canonico(estado_unergy)
-    if estado is None:
-        return Homologacion("", None, f"Estado «{estado_unergy}» no reconocido; agrégalo en config/homologacion.py.")
+def estado_tsf(car: str | None, etapa: str | None) -> str:
+    """Estado que debería tener el proyecto en TSF según la etapa registrada aquí."""
+    if not etapa:
+        return ""
+    propio = ETAPA_A_TSF_POR_CAR.get(str(car or "").upper(), {})
+    return propio.get(etapa) or ETAPA_A_TSF.get(etapa, "")
+
+
+def etapa_desde_tsf(car: str | None, estado_api: str) -> str | None:
+    """Etapa del flujo de la CAR que corresponde al estado TSF, solo si es una sola. Si no, None."""
+    estado = estado_canonico(estado_api) if estado_api else None
     flujo = obtener_flujo(car)
-    if estado in SIN_EQUIVALENCIA:
-        return Homologacion(estado, None, SIN_EQUIVALENCIA[estado])
-    if not flujo:
-        return Homologacion(estado, None, "Sin CAR con flujo: no se puede traducir a una etapa.")
-    nombres = [e.nombre for e in flujo]
-    if estado in POR_HITO:
-        etapa = next((e.nombre for e in flujo if e.hito == POR_HITO[estado]), None)
-    elif estado in POR_ETAPA:
-        etapa = POR_ETAPA[estado] if POR_ETAPA[estado] in nombres else None
-    elif estado in POR_CAR:
-        etapa = POR_CAR[estado].get(str(car).upper())
-        etapa = etapa if etapa in nombres else None
-    else:
-        etapa = None
-    if etapa is None:
-        return Homologacion(estado, None, f"«{estado}» no tiene una etapa equivalente en el flujo de {car}.")
-    return Homologacion(estado, etapa, f"«{estado}» en Unergy equivale a «{etapa}» en {car}.")
+    if not estado or not flujo:
+        return None
+    candidatas = [e.nombre for e in flujo if estado_tsf(car, e.nombre) == estado]
+    return candidatas[0] if len(candidatas) == 1 else None

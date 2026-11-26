@@ -111,6 +111,10 @@ class ClienteUnergy:
             params["search"] = buscar
         return _como_pagina(self._get(Endpoint.FORESTAL_LISTA.value, params))
 
+    def conteo_forestal(self) -> object:
+        """Sin «page», la API devuelve cuántos terrenos hay en cada «Estado forestal» (del terreno)."""
+        return self._get(Endpoint.FORESTAL_LISTA.value)
+
     def listar_forestal_todo(self, page_size: int = 100, max_paginas: int = 500) -> list[JsonObj]:
         return self._recorrer(self.listar_forestal, page_size, max_paginas)
 

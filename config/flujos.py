@@ -189,3 +189,12 @@ def validar_flujos() -> list[str]:
         if posiciones != sorted(posiciones):
             errores.append(f"{car}: los hitos no siguen el orden radicado → auto → visita → resolución.")
     return errores
+
+
+def avance(car: object, etapa: str | None) -> float | None:
+    """Avance administrativo: etapas cumplidas sobre el total del flujo (0 a 1)."""
+    flujo = obtener_flujo(car)
+    if not flujo or not etapa:
+        return None
+    i = indice_etapa(flujo, etapa)
+    return None if i is None else i / (len(flujo) - 1)

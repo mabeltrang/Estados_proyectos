@@ -48,8 +48,10 @@ COLUMNAS_TEXTO_HISTORICO: dict[Columna, tuple[str, ...]] = {
 }
 
 # ── API de Unergy ────────────────────────────────────────────────────────────
-# Campo de cada Minifarm que trae el «Estado forestal» (columna A. FORESTAL de la plataforma).
-CAMPO_ESTADO_FORESTAL = "forestry_licence"
+# Campo de cada Minifarm de donde se lee el «Estado forestal» de TSF (columna A. FORESTAL).
+# Solo se muestra si el valor es un estado de TSF; si no, aparece «No encontrado».
+# `forestry_licence` NO es el estado: es el tipo de permiso ("Licencia de aprovechamiento forestal").
+CAMPOS_ESTADO_FORESTAL: tuple[str, ...] = ("forestry_license_resolution",)
 API_BASE_URL_POR_DEFECTO = "https://originabot.uner.gy"
 API_PAGE_SIZE = 100
 API_TIMEOUT_SEGUNDOS = 20
@@ -59,6 +61,8 @@ API_HILOS_DETALLE = 6
 
 # Páginas máximas que se traen en una búsqueda (100 terrenos por página).
 BUSQUEDA_MAX_PAGINAS = 3
+# Máximo de terrenos de una búsqueda cuyos proyectos se cargan de una vez (una consulta por terreno).
+BUSQUEDA_MAX_TERRENOS = 25
 
 # Cada cuánto se vuelven a pedir los datos a la API (segundos).
 CACHE_API_SEGUNDOS = 60 * 60

@@ -1,32 +1,44 @@
-from config.flujos import FLUJOS
-from config.homologacion import ESTADOS_UNERGY, POR_CAR, homologar
+from config.flujos import FLUJOS, avance
+from config.homologacion import ESTADOS_UNERGY, estado_canonico, estado_tsf, etapa_desde_tsf
 
 
-def test_radicada_va_a_la_etapa_de_radicado_de_cada_car():
-    assert homologar("CORPOCESAR", "Solicitud radicada").etapa == "Radicado"
-    assert homologar("CVS", "Solicitud radicada").etapa == "Radicación"
-    assert homologar("CRA", "solicitud RADICADA").etapa == "Radicación"
-    assert homologar("CORTOLIMA", "Solicitud radicada").etapa is None  # su flujo no tiene radicado
+def test_toda_etapa_de_todo_flujo_tiene_estado_tsf_valido():
+    for car, flujo in FLUJOS.items():
+        for etapa in flujo:
+            assert estado_tsf(car, etapa.nombre) in ESTADOS_UNERGY, (car, etapa.nombre)
 
 
-def test_otras_equivalencias():
-    assert homologar("CARSUCRE", "Visita").etapa == "Visita técnica"
-    assert homologar("CAS", "Solicitud aprobada").etapa == "Resolución"
-    assert homologar("CDMB", "Por radicar").etapa == "Informes"
-    assert homologar("CVS", "Liquidacion").etapa == "Liquidación servicios"
-    assert homologar("CORPOCESAR", "Liquidación").etapa is None
+def test_ejemplos():
+    assert estado_tsf("CORPOCESAR", "Inventario") == "Programado"
+    assert estado_tsf("CORPOCESAR", "Informes") == "Por radicar"
+    assert estado_tsf("CORPOCESAR", "Llega auto") == "Solicitud radicada"
+    assert estado_tsf("CARSUCRE", "Pago tasa de aprovechamiento") == "Liquidación"
+    assert estado_tsf("CORPOCESAR", "Acta") == "Visita"
+    assert estado_tsf("CAS", "Resolución") == "Solicitud aprobada"
+    assert estado_tsf("CAS", "") == ""
 
 
-def test_estados_sin_equivalencia_dan_aviso():
-    h = homologar("CORPOCESAR", "Respuesta a requerimiento")
-    assert h.estado == "Respuesta a requerimientos" and h.etapa is None and h.nota
-    assert homologar("CORPOCESAR", "Algo raro").estado == ""
-    assert homologar("CORPOCESAR", "").nota == ""
+def test_reconoce_estados_tsf():
+    assert estado_canonico("respuesta a requerimiento") == "Respuesta a requerimientos"
+    assert estado_canonico("Licencia de aprovechamiento forestal") is None
 
 
-def test_todos_los_estados_estan_clasificados_y_las_etapas_existen():
-    for estado in ESTADOS_UNERGY:
-        assert homologar("CORPOCESAR", estado).estado == estado
-    for estado, por_car in POR_CAR.items():
-        for car, etapa in por_car.items():
-            assert etapa in [e.nombre for e in FLUJOS[car]], (estado, car)
+def test_avance():
+    assert avance("CORPOCESAR", "Inventario") == 0
+    assert avance("CORPOCESAR", "Resolución") == 1
+    assert avance("CORTOLIMA", "Auto") == 3 / 5
+    assert avance("CORPOCESAR", None) is None
+
+
+def test_etapa_desde_tsf_solo_si_es_clara():
+    assert etapa_desde_tsf("CORPOCESAR", "Programado") == "Inventario"
+    assert etapa_desde_tsf("CDMB", "Por radicar") == "Informes"
+    assert etapa_desde_tsf("CAS", "Solicitud aprobada") == "Resolución"
+    assert etapa_desde_tsf("CARSUCRE", "Visita") == "Visita técnica"
+    assert etapa_desde_tsf("CVS", "Liquidación") == "Liquidación servicios"
+    assert etapa_desde_tsf("CARSUCRE", "Liquidación") is None       # evaluación o tasa
+    assert etapa_desde_tsf("CORPOCESAR", "Solicitud radicada") is None  # radicado o auto
+    assert etapa_desde_tsf("CORPOCESAR", "Visita") is None           # visita o acta
+    assert etapa_desde_tsf("CORPOCESAR", "Respuesta a requerimientos") is None
+    assert etapa_desde_tsf("CORPOCESAR", "Licencia de aprovechamiento forestal") is None
+    assert etapa_desde_tsf(None, "Programado") is None

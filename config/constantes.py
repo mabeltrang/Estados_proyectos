@@ -142,6 +142,8 @@ class Columna(StrEnum):
     ETAPA_API = "etapa_api"
     ARBOLES = "arboles"
     ESTADO_FORESTAL = "estado_forestal"
+    CAMPO_ESTADO = "campo_estado_forestal"   # de qué campo de la API salió el estado
+    TIPO_PERMISO = "tipo_permiso"            # forestry_licence (ej. "Licencia de aprovechamiento forestal")
     RESOLUCION_LICENCIA = "resolucion_licencia"
     OPERADOR_RED = "operador_red"
     # histórico

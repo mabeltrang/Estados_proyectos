@@ -10,16 +10,18 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from config.ajustes import CAMPO_ESTADO_FORESTAL
+from config.ajustes import CAMPOS_ESTADO_FORESTAL
 from config.car_lookup import obtener_car
 from config.constantes import Columna, FuenteCar
 from config.flujos import FLUJOS
+from config.homologacion import estado_canonico
 from core.api_unergy import ClienteUnergy, ErrorApiUnergy, JsonObj
 
 COLUMNAS_PROYECTO: list[str] = [
     Columna.MINIFARM_ID, Columna.PROJECT_ID, Columna.NOMBRE, Columna.TERRENO_ID, Columna.TERRENO_NOMBRE,
     Columna.UBICACION, Columna.MUNICIPIO, Columna.DEPARTAMENTO, Columna.ETAPA_API, Columna.ARBOLES,
-    Columna.ESTADO_FORESTAL, Columna.RESOLUCION_LICENCIA, Columna.OPERADOR_RED,
+    Columna.ESTADO_FORESTAL, Columna.CAMPO_ESTADO, Columna.TIPO_PERMISO, Columna.RESOLUCION_LICENCIA,
+    Columna.OPERADOR_RED,
 ]
 
 
@@ -46,6 +48,29 @@ def a_texto(valor: object) -> str:
     return str(valor)
 
 
+def textos_anidados(valor: object, ruta: str, profundidad: int = 0):
+    """Recorre un valor de la API y devuelve (ruta, texto) de cada texto que contiene."""
+    if isinstance(valor, str):
+        yield ruta, valor
+    elif isinstance(valor, dict) and profundidad < 3:
+        for clave, v in valor.items():
+            yield from textos_anidados(v, f"{ruta}.{clave}", profundidad + 1)
+    elif isinstance(valor, list) and profundidad < 3:
+        for i, v in enumerate(valor):
+            yield from textos_anidados(v, f"{ruta}[{i}]", profundidad + 1)
+
+
+def detectar_estado_forestal(minifarm: dict[str, object]) -> tuple[str, str]:
+    """Lee el estado TSF solo de los campos configurados en ajustes.CAMPOS_ESTADO_FORESTAL.
+    Devuelve (estado, campo) o ("", "") si el valor no es un estado de TSF. No revisa otros campos."""
+    for campo in [c for c in CAMPOS_ESTADO_FORESTAL if c in minifarm]:
+        for ruta, texto in textos_anidados(minifarm.get(campo), campo):
+            estado = estado_canonico(texto)
+            if estado:
+                return estado, ruta
+    return "", ""
+
+
 def separar_ubicacion(ubicacion: str) -> tuple[str, str]:
     """'Ciudad, Región' → ('Ciudad', 'Región'). Si no hay coma, el departamento queda vacío."""
     texto = (ubicacion or "").strip()
@@ -65,6 +90,7 @@ def minifarms_de_terreno(detalle: JsonObj) -> list[dict[str, object]]:
     for mf in minifarms:
         if not isinstance(mf, dict) or mf.get("id") is None:
             continue
+        estado, campo = detectar_estado_forestal(mf)
         filas.append(
             {
                 Columna.MINIFARM_ID: str(mf.get("id")),
@@ -77,7 +103,9 @@ def minifarms_de_terreno(detalle: JsonObj) -> list[dict[str, object]]:
                 Columna.DEPARTAMENTO: departamento,
                 Columna.ETAPA_API: a_texto(mf.get("stage")),
                 Columna.ARBOLES: a_texto(mf.get("tree_count")),
-                Columna.ESTADO_FORESTAL: a_texto(mf.get(CAMPO_ESTADO_FORESTAL)),
+                Columna.ESTADO_FORESTAL: estado,
+                Columna.CAMPO_ESTADO: campo,
+                Columna.TIPO_PERMISO: a_texto(mf.get("forestry_licence")),
                 Columna.RESOLUCION_LICENCIA: a_texto(mf.get("forestry_license_resolution")),
                 Columna.OPERADOR_RED: a_texto(mf.get("grid_operator")),
             }

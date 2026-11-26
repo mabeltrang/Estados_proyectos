@@ -15,7 +15,9 @@ APP = str(Path(__file__).resolve().parent.parent / "app.py")
 TERRENOS = {
     1: ("Finca A", "Valledupar, Cesar", [(11, "Solar Cesar")]),
     2: ("Finca B", "Cartagena, Bolívar", [(21, "Solar Bolívar")]),
+    3: ("Finca C", "Valledupar, Cesar", [(31, "Solar Programado")]),
 }
+ESTADO_TSF = {11: "Solicitud radicada", 21: "Solicitud radicada", 31: "Programado"}
 
 
 class ApiFalsa(BaseHTTPRequestHandler):
@@ -39,7 +41,8 @@ class ApiFalsa(BaseHTTPRequestHandler):
             n, loc, mfs = TERRENOS[i]
             cuerpo = {"id": i, "name": n, "location": loc,
                       "minifarms": [{"id": m, "name": nombre, "stage": "UCI",
-                                    "forestry_licence": "Solicitud radicada"} for m, nombre in mfs]}
+                                    "forestry_licence": "Licencia de aprovechamiento forestal",
+                                    "forestry_license_resolution": {"id": 2, "name": ESTADO_TSF[m]}} for m, nombre in mfs]}
         datos = json.dumps(cuerpo).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -89,15 +92,19 @@ def test_buscar_abrir_guardar_y_volver(api):
     at.text_input[0].input("solar cesar")
     at.run()
     assert not at.exception
-    assert len(at.dataframe[0].value) == 1
-    # simula seleccionar la fila del terreno 1 (Finca A, una sola Minifarm → abre el detalle)
+    resultado = at.dataframe[0].value
+    assert list(resultado["Proyecto"]) == ["Solar Cesar"]
+    assert list(resultado["Estado TSF"]) == ["Solicitud radicada"]
+    assert list(resultado["Estado homologado"]) == ["Sin homologación"]  # en CORPOCESAR puede ser Radicado o Llega auto
+    # simula seleccionar la fila (abre el detalle del proyecto)
     at.session_state["_terreno_seleccionado"] = "1"
+    at.session_state["_minifarm_seleccionada"] = "11"
     at.run()
     assert any("unergy-header" in m.value and "Solar Cesar" in m.value for m in at.markdown)
     assert any("Solicitud radicada" in m.value for m in at.markdown)
     etapa = next(s for s in at.selectbox if s.label.startswith("Etapa actual"))
     assert "Acta" in etapa.options
-    assert etapa.value == "Radicado"  # sugerida desde el estado forestal de Unergy
+    assert etapa.value is None and not etapa.disabled  # sin homologación clara: se registra a mano
     etapa.select("Llega auto")
     for d in at.date_input:
         if d.label == "⏱ Radicado":
@@ -112,6 +119,8 @@ def test_buscar_abrir_guardar_y_volver(api):
     next(b for b in at.button if b.label.startswith("← Volver")).click()
     at.run()
     assert at.text_input[0].value == "solar cesar"
+    fila = at.dataframe[0].value.iloc[0]
+    assert fila["Estado homologado"] == "Llega auto" and fila["Origen"] == "Manual" and fila["Avance"] == 43
     # sin texto aparece la tabla de seguimiento con el proyecto guardado
     at.text_input[0].input("")
     at.run()
@@ -121,6 +130,22 @@ def test_buscar_abrir_guardar_y_volver(api):
     at.run()
     assert at.metric[0].value == "1"
     assert ApiFalsa.metodos_no_get == []
+
+
+def test_estado_tsf_con_homologacion_clara_se_usa_directo(api):
+    at = app(api)
+    at.switch_page("paginas/proyectos.py")
+    at.run()
+    at.text_input[0].input("programado")
+    at.run()
+    fila = at.dataframe[0].value.iloc[0]
+    assert (fila["Estado TSF"], fila["Estado homologado"], fila["Origen"], fila["Avance"]) == (
+        "Programado", "Inventario", "TSF", 0)
+    at.session_state["_terreno_seleccionado"] = "3"
+    at.session_state["_minifarm_seleccionada"] = "31"
+    at.run()
+    etapa = next(s for s in at.selectbox if s.label.startswith("Etapa actual"))
+    assert etapa.value == "Inventario" and etapa.disabled
 
 
 def test_car_no_identificada_pide_seleccion(api):
