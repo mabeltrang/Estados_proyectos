@@ -18,7 +18,15 @@ from core.api_unergy import ErrorApiUnergy
 from core.fechas import dias_entre, formato_fecha, hoy_colombia
 from core.prediccion import validar_fechas
 from core.proyectos import identificar_car
-from ui.componentes import avances, tarjeta_cuenta_regresiva, tarjeta_resolucion, texto_semaforo
+from config.homologacion import homologar
+from ui.componentes import (
+    avances,
+    encabezado,
+    etiqueta_estado_unergy,
+    tarjeta_cuenta_regresiva,
+    tarjeta_resolucion,
+    texto_semaforo,
+)
 from ui.datos import (
     CLAVE_SEGUIMIENTOS,
     almacen,
@@ -65,7 +73,7 @@ def fila_elegida(evento: object) -> int | None:
 
 # ── Pantalla 1: buscador y proyectos en seguimiento ──────────────────────────
 def pantalla_busqueda() -> None:
-    st.title("Proyectos")
+    encabezado("Proyectos", "Busca un proyecto para ver o actualizar su estado ante la CAR.")
     aviso_almacen()
     texto = st.text_input(
         "Buscar proyecto",
@@ -160,13 +168,17 @@ def pantalla_terreno(terreno_id: str) -> None:
     if len(tabla) == 1:
         abrir(terreno_id, tabla.iloc[0][Columna.MINIFARM_ID.value])
         st.rerun()
-    st.title(str(tabla.iloc[0][Columna.TERRENO_NOMBRE.value]))
-    st.caption(f"{tabla.iloc[0][Columna.UBICACION.value]} · {len(tabla)} proyectos. Selecciona uno.")
+    encabezado(
+        str(tabla.iloc[0][Columna.TERRENO_NOMBRE.value]),
+        f"{tabla.iloc[0][Columna.UBICACION.value]} · {len(tabla)} proyectos. Selecciona uno.",
+        "🗺️",
+    )
     seg = seguimientos()
     vista = pd.DataFrame(
         {
             "Proyecto": tabla[Columna.NOMBRE.value],
-            "Etapa en la API": tabla[Columna.ETAPA_API.value],
+            "Estado forestal (Unergy)": tabla[Columna.ESTADO_FORESTAL.value].replace("", "—"),
+            "Estado general": tabla[Columna.ETAPA_API.value],
             "Árboles": tabla[Columna.ARBOLES.value],
             "Estado registrado": tabla[Columna.MINIFARM_ID.value].map(
                 lambda m: (seg[m].etapa_actual if m in seg else "") or "Sin registrar"
@@ -200,20 +212,22 @@ def pantalla_detalle(terreno_id: str, mid: str) -> None:
     seg_actual = seguimientos().get(mid)
     hoy = hoy_colombia()
 
-    st.title(str(fila[Columna.NOMBRE.value]))
-    st.caption(f"Terreno {fila[Columna.TERRENO_NOMBRE.value]} · {fila[Columna.UBICACION.value]}")
+    encabezado(str(fila[Columna.NOMBRE.value]), f"Terreno {fila[Columna.TERRENO_NOMBRE.value]} · {fila[Columna.UBICACION.value]}")
 
     info, car_col = st.columns([1.2, 1])
     with info:
         with st.container(border=True):
             st.markdown("**Proyecto**")
+            st.markdown(
+                "Estado forestal (Unergy): " + etiqueta_estado_unergy(str(fila[Columna.ESTADO_FORESTAL.value])),
+                unsafe_allow_html=True,
+            )
             datos = {
                 "Minifarm": fila[Columna.MINIFARM_ID.value],
                 "Project id": fila[Columna.PROJECT_ID.value],
                 "Terreno (id)": f"{fila[Columna.TERRENO_NOMBRE.value]} ({fila[Columna.TERRENO_ID.value]})",
                 "Árboles": fila[Columna.ARBOLES.value],
-                "Etapa en la API": fila[Columna.ETAPA_API.value],
-                "Licencia forestal": fila[Columna.LICENCIA.value],
+                "Estado general": fila[Columna.ETAPA_API.value],
                 "Resolución de licencia": fila[Columna.RESOLUCION_LICENCIA.value],
                 "Operador de red": fila[Columna.OPERADOR_RED.value],
             }
@@ -244,15 +258,21 @@ def pantalla_detalle(terreno_id: str, mid: str) -> None:
     if not flujo:
         return
 
+    hom = homologar(car, str(fila[Columna.ESTADO_FORESTAL.value]))
     nombres = [e.nombre for e in flujo]
     fechas_previas = {k: v for k, v in (seg_actual.fechas if seg_actual else {}).items() if k in nombres}
     with st.form(f"form_{mid}_{car}"):
         st.markdown("**Estado del trámite**")
         etapa_previa = seg_actual.etapa_actual if seg_actual and seg_actual.etapa_actual in nombres else None
+        sugerida = etapa_previa or hom.etapa
         etapa = st.selectbox(
             "Etapa actual (la última que ya ocurrió)", nombres,
-            index=nombres.index(etapa_previa) if etapa_previa else None, placeholder="Selecciona la etapa",
+            index=nombres.index(sugerida) if sugerida else None, placeholder="Selecciona la etapa",
         )
+        if not etapa_previa and hom.etapa:
+            st.caption(f"Etapa sugerida desde Unergy: {hom.nota} Revísala y pulsa Guardar.")
+        elif etapa_previa and hom.etapa and hom.etapa != etapa_previa:
+            st.caption(f"⚠️ {hom.nota} Aquí está registrada «{etapa_previa}».")
         st.caption(
             "Fechas en que ocurrió cada etapa. Llena solo las que conozcas; la fecha de hoy no se asume. "
             "Las marcadas con ⏱ tienen histórico y mueven la cuenta regresiva."
@@ -293,7 +313,13 @@ def pantalla_detalle(terreno_id: str, mid: str) -> None:
                     st.toast("Seguimiento guardado", icon="✅")
                     st.rerun()
 
-    pred = prediccion_de(car, seg_actual)
+    if hom.nota and not hom.etapa:
+        st.info(hom.nota, icon="📌")
+    if seg_actual and seg_actual.etapa_actual:
+        base_pred = seg_actual
+    else:  # aún no guardado: usar la etapa sugerida por Unergy (las fechas siguen siendo manuales)
+        base_pred = Seguimiento(mid, etapa_actual=hom.etapa or "", fechas=seg_actual.fechas if seg_actual else {})
+    pred = prediccion_de(car, base_pred)
     a, b = st.columns(2)
     with a:
         tarjeta_cuenta_regresiva(pred)

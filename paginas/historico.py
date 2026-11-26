@@ -8,10 +8,14 @@ import streamlit as st
 from config import ajustes
 from config.constantes import NOMBRE_HITO, Hito
 from config.flujos import FLUJOS
+from ui.componentes import encabezado
 from ui.datos import base_tiempos, historico_actual
 
-st.title("Histórico y calidad de datos")
-st.caption(f"Fuente: {ajustes.RUTA_HISTORICO.name} (solo lectura; el archivo original no se modifica).")
+encabezado(
+    "Histórico y calidad de datos",
+    f"Fuente: {ajustes.RUTA_HISTORICO.name} (solo lectura; el archivo original no se modifica).",
+    "📚",
+)
 
 h = historico_actual()
 base = base_tiempos()

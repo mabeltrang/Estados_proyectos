@@ -48,6 +48,8 @@ COLUMNAS_TEXTO_HISTORICO: dict[Columna, tuple[str, ...]] = {
 }
 
 # ── API de Unergy ────────────────────────────────────────────────────────────
+# Campo de cada Minifarm que trae el «Estado forestal» (columna A. FORESTAL de la plataforma).
+CAMPO_ESTADO_FORESTAL = "forestry_licence"
 API_BASE_URL_POR_DEFECTO = "https://originabot.uner.gy"
 API_PAGE_SIZE = 100
 API_TIMEOUT_SEGUNDOS = 20

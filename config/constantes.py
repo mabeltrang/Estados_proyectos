@@ -141,7 +141,7 @@ class Columna(StrEnum):
     CAR_FUENTE = "car_fuente"
     ETAPA_API = "etapa_api"
     ARBOLES = "arboles"
-    LICENCIA = "licencia_forestal"
+    ESTADO_FORESTAL = "estado_forestal"
     RESOLUCION_LICENCIA = "resolucion_licencia"
     OPERADOR_RED = "operador_red"
     # histórico

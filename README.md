@@ -26,6 +26,7 @@ usando los tiempos de expedientes anteriores.
 | `app.py` | Arranque: contraseña opcional y menú de páginas |
 | `paginas/` | Las cuatro pantallas: vista general, proyectos, histórico, explorar API |
 | `config/flujos.py` | **Etapas de cada CAR.** Aquí se agregan o cambian etapas |
+| `config/homologacion.py` | **Equivalencia provisional** entre el «Estado forestal» de Unergy y las etapas de cada CAR |
 | `config/ajustes.py` | Mínimo de antecedentes, días calendario/hábiles, CAR excluidas, encabezados del Excel |
 | `config/car_lookup.py`, `config/municipios_car.csv` | Copia de la tabla municipio → CAR |
 | `data/Fechas_CARS.xlsx` | Copia del histórico (solo lectura) |
@@ -85,6 +86,26 @@ cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # y llena tus valor
 streamlit run app.py
 python -m pytest                                              # pruebas
 ```
+
+## Estado forestal de Unergy (homologación provisional)
+
+La app lee el «Estado forestal» de cada proyecto (columna A. FORESTAL de la plataforma; campo
+`forestry_licence`, configurable en `config/ajustes.py`) y lo muestra con su color.
+Mientras la plataforma no tenga los flujos por CAR, algunos estados se traducen a una etapa:
+
+| Estado en Unergy | Etapa sugerida |
+|---|---|
+| Por radicar | Informes |
+| Solicitud radicada | La etapa de radicado de esa CAR (Radicado / Radicación) |
+| Liquidación | Pago o liquidación de esa CAR (no aplica en CORPOCESAR ni CRA) |
+| Visita | Visita / Visita técnica |
+| Solicitud aprobada | Resolución |
+
+Requerimientos, Respuesta a requerimientos, Respuesta radicado, Programado, Pausado, Solicitud
+rechazada y Exonerado no cambian la etapa: se muestran como aviso.
+
+La etapa sugerida solo preselecciona el desplegable; no se guarda hasta que pulses Guardar, y las
+fechas siguen siendo manuales. Si lo guardado no coincide con Unergy, la app lo advierte.
 
 ## Cómo se calcula la predicción
 

@@ -38,7 +38,8 @@ class ApiFalsa(BaseHTTPRequestHandler):
             i = int(ruta.strip("/").split("/")[-1])
             n, loc, mfs = TERRENOS[i]
             cuerpo = {"id": i, "name": n, "location": loc,
-                      "minifarms": [{"id": m, "name": nombre, "stage": "Radicado"} for m, nombre in mfs]}
+                      "minifarms": [{"id": m, "name": nombre, "stage": "UCI",
+                                    "forestry_licence": "Solicitud radicada"} for m, nombre in mfs]}
         datos = json.dumps(cuerpo).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -92,9 +93,11 @@ def test_buscar_abrir_guardar_y_volver(api):
     # simula seleccionar la fila del terreno 1 (Finca A, una sola Minifarm → abre el detalle)
     at.session_state["_terreno_seleccionado"] = "1"
     at.run()
-    assert [t.value for t in at.title] == ["Solar Cesar"]
+    assert any("unergy-header" in m.value and "Solar Cesar" in m.value for m in at.markdown)
+    assert any("Solicitud radicada" in m.value for m in at.markdown)
     etapa = next(s for s in at.selectbox if s.label.startswith("Etapa actual"))
     assert "Acta" in etapa.options
+    assert etapa.value == "Radicado"  # sugerida desde el estado forestal de Unergy
     etapa.select("Llega auto")
     for d in at.date_input:
         if d.label == "⏱ Radicado":

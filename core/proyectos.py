@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from config.ajustes import CAMPO_ESTADO_FORESTAL
 from config.car_lookup import obtener_car
 from config.constantes import Columna, FuenteCar
 from config.flujos import FLUJOS
@@ -18,7 +19,7 @@ from core.api_unergy import ClienteUnergy, ErrorApiUnergy, JsonObj
 COLUMNAS_PROYECTO: list[str] = [
     Columna.MINIFARM_ID, Columna.PROJECT_ID, Columna.NOMBRE, Columna.TERRENO_ID, Columna.TERRENO_NOMBRE,
     Columna.UBICACION, Columna.MUNICIPIO, Columna.DEPARTAMENTO, Columna.ETAPA_API, Columna.ARBOLES,
-    Columna.LICENCIA, Columna.RESOLUCION_LICENCIA, Columna.OPERADOR_RED,
+    Columna.ESTADO_FORESTAL, Columna.RESOLUCION_LICENCIA, Columna.OPERADOR_RED,
 ]
 
 
@@ -76,7 +77,7 @@ def minifarms_de_terreno(detalle: JsonObj) -> list[dict[str, object]]:
                 Columna.DEPARTAMENTO: departamento,
                 Columna.ETAPA_API: a_texto(mf.get("stage")),
                 Columna.ARBOLES: a_texto(mf.get("tree_count")),
-                Columna.LICENCIA: a_texto(mf.get("forestry_licence")),
+                Columna.ESTADO_FORESTAL: a_texto(mf.get(CAMPO_ESTADO_FORESTAL)),
                 Columna.RESOLUCION_LICENCIA: a_texto(mf.get("forestry_license_resolution")),
                 Columna.OPERADOR_RED: a_texto(mf.get("grid_operator")),
             }

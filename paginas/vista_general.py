@@ -11,11 +11,13 @@ import streamlit as st
 from config import ajustes
 from config.constantes import SEMAFORO_COLOR, SEMAFORO_TEXTO, Columna, Semaforo
 from core.fechas import formato_fecha, hoy_colombia
-from ui.componentes import texto_semaforo
+from ui.componentes import PURPLE, encabezado, texto_semaforo
 from ui.datos import aviso_almacen, tabla_seguimiento
 
-st.title("Trámites de aprovechamiento forestal")
-st.caption("Proyectos con seguimiento registrado. Para agregar uno, búscalo en «Proyectos».")
+encabezado(
+    "Trámites de aprovechamiento forestal",
+    "Unergy · Equipo forestal · Proyectos con seguimiento registrado. Para agregar uno, búscalo en «Proyectos».",
+)
 aviso_almacen()
 
 df, _ = tabla_seguimiento()
@@ -42,7 +44,7 @@ with izq:
         df[Columna.CAR.value].replace("", "Sin identificar").value_counts().rename_axis("CAR").reset_index(name="Proyectos")
     )
     st.altair_chart(
-        alt.Chart(por_car).mark_bar(color="#2E6B4F").encode(
+        alt.Chart(por_car).mark_bar(color=PURPLE).encode(
             x="Proyectos:Q", y=alt.Y("CAR:N", sort="-x", title=None), tooltip=["CAR", "Proyectos"]
         ),
         width="stretch",

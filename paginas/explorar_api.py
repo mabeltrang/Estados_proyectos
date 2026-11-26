@@ -9,11 +9,13 @@ from config import ajustes
 from config.constantes import Columna, FuenteCar
 from core.api_unergy import ClienteUnergy, ErrorApiUnergy, JsonObj
 from core.proyectos import a_texto, asignar_car, minifarms_de_terreno
+from ui.componentes import encabezado
 from ui.datos import crear_cliente, proyectos_api
 
-st.title("Explorar API")
-st.caption(
-    "Todas las consultas son de solo lectura (GET). La API Key se toma de los Secrets y nunca se muestra."
+encabezado(
+    "Explorar API",
+    "Todas las consultas son de solo lectura (GET). La API Key se toma de los Secrets y nunca se muestra.",
+    "🔌",
 )
 
 
@@ -99,9 +101,9 @@ if st.button("Analizar todos los proyectos (puede tardar varios minutos)"):
     )
     a, b = st.columns(2)
     with a:
-        st.markdown("Valores de `stage` en la API")
+        st.markdown("Valores de estado forestal en la API")
         st.dataframe(
-            tabla[Columna.ETAPA_API].replace("", "(vacío)").value_counts().rename_axis("stage").reset_index(name="Minifarms"),
+            tabla[Columna.ESTADO_FORESTAL].replace("", "(vacío)").value_counts().rename_axis("Estado forestal").reset_index(name="Minifarms"),
             hide_index=True,
             width="stretch",
         )
