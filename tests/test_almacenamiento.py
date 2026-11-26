@@ -61,21 +61,35 @@ def almacen(monkeypatch):
 
 def test_guardar_y_cargar(monkeypatch):
     a, libro = almacen(monkeypatch)
-    s1 = Seguimiento("11", "Solar A", "", "Llega auto", {"Radicado": date(2026, 6, 1), "Llega auto": date(2026, 8, 20)}, "t1")
-    s2 = Seguimiento("12", "Solar B", "CSB", "Radicado", {"Radicado": date(2026, 7, 1)}, "t1")
-    a.guardar(s1, "CORPOCESAR", calcular_cambios(None, s1))
-    a.guardar(s2, "CSB", calcular_cambios(None, s2))
+    s1 = Seguimiento("11", "Solar A", "", "Llega auto", {"Radicado": date(2026, 6, 1), "Llega auto": date(2026, 8, 20)},
+                     "t1", car="CORPOCESAR", terreno_id="7", terreno_nombre="Finca", ubicacion="Valledupar, Cesar")
+    s2 = Seguimiento("12", "Solar B", "CSB", "Radicado", {"Radicado": date(2026, 7, 1)}, "t1", car="CSB")
+    a.guardar(s1, calcular_cambios(None, s1))
+    a.guardar(s2, calcular_cambios(None, s2))
     # actualizar s1 quitando una fecha
-    s1b = Seguimiento("11", "Solar A", "", "Radicado", {"Radicado": date(2026, 6, 1)}, "t2")
-    a.guardar(s1b, "CORPOCESAR", calcular_cambios(s1, s1b))
+    s1b = Seguimiento("11", "Solar A", "", "Radicado", {"Radicado": date(2026, 6, 1)}, "t2",
+                      car="CORPOCESAR", terreno_id="7", terreno_nombre="Finca", ubicacion="Valledupar, Cesar")
+    a.guardar(s1b, calcular_cambios(s1, s1b))
 
     datos = a.cargar()
     assert datos["11"].etapa_actual == "Radicado"
     assert datos["11"].fechas == {"Radicado": date(2026, 6, 1)}
+    assert datos["11"].terreno_id == "7" and datos["11"].car == "CORPOCESAR"
     assert datos["12"].car_manual == "CSB" and datos["12"].fechas == {"Radicado": date(2026, 7, 1)}
     assert len(libro.hojas["seguimiento"].celdas) == 3  # encabezado + 2 proyectos
     historial = libro.hojas["historial_cambios"].celdas
     assert ["t2", "11", "Solar A", "Etapa actual", "Llega auto", "Radicado"] in historial
+
+
+def test_hoja_de_version_anterior_recibe_encabezados_nuevos(monkeypatch):
+    libro = LibroFalso()
+    vieja = libro.add_worksheet("seguimiento", 200, 5)
+    vieja.celdas = [["minifarm_id", "nombre", "car_manual", "etapa_actual", "actualizado_en"], ["9", "X", "", "Radicado", "t"]]
+    falso = types.SimpleNamespace(service_account_from_dict=lambda c: types.SimpleNamespace(open_by_url=lambda u: libro))
+    monkeypatch.setitem(sys.modules, "gspread", falso)
+    a = GoogleSheetsAlmacen({}, "u")
+    assert vieja.celdas[0][5] == "car"
+    assert a.cargar()["9"].etapa_actual == "Radicado"
 
 
 def test_calcular_cambios():

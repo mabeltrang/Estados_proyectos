@@ -15,11 +15,12 @@ Ver `docs/adr/0001-streamlit-y-google-sheets.md`.
 - `core/estadisticas.py`: duraciones por tramo y elección de antecedentes.
 - `core/prediccion.py`: reglas de negocio (reloj, semáforo, resolución).
 - `core/almacenamiento.py`: Google Sheets o memoria.
-- `ui/datos.py`: caché de Streamlit y unión de todo para las páginas.
+- `ui/datos.py`: caché de Streamlit y unión de todo para las páginas. La API se consulta bajo
+  demanda (búsqueda con `?search=` y detalle de un terreno); la vista general sale del Google Sheet.
 
 ## Modelo de datos
 - Proyecto = Minifarm (`minifarms[]` del detalle forestal). Se identifica por `minifarm_id`.
-- Seguimiento (Google Sheets): `seguimiento` (CAR manual, etapa actual), `fechas_etapas`
+- Seguimiento (Google Sheets): `seguimiento` (CAR manual y efectiva, etapa actual, terreno, ubicación), `fechas_etapas`
   (fecha por etapa), `historial_cambios` (bitácora solo de agregar).
 
 ## Glosario

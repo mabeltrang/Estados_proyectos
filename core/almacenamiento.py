@@ -17,7 +17,10 @@ from config.constantes import Hoja
 from core.fechas import ZONA_COLOMBIA
 
 ENCABEZADOS: dict[Hoja, list[str]] = {
-    Hoja.SEGUIMIENTO: ["minifarm_id", "nombre", "car_manual", "etapa_actual", "actualizado_en"],
+    Hoja.SEGUIMIENTO: [
+        "minifarm_id", "nombre", "car_manual", "etapa_actual", "actualizado_en",
+        "car", "terreno_id", "terreno_nombre", "ubicacion",
+    ],
     Hoja.FECHAS: ["minifarm_id", "nombre", "car", "etapa", "fecha", "registrado_en"],
     Hoja.HISTORIAL: ["fecha_cambio", "minifarm_id", "nombre", "campo", "antes", "despues"],
 }
@@ -31,6 +34,10 @@ class Seguimiento:
     etapa_actual: str = ""
     fechas: dict[str, date] = field(default_factory=dict)
     actualizado_en: str = ""
+    car: str = ""             # CAR con la que se hizo el seguimiento (automática o manual)
+    terreno_id: str = ""
+    terreno_nombre: str = ""
+    ubicacion: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,7 +71,7 @@ class Almacen(Protocol):
 
     def cargar(self) -> dict[str, Seguimiento]: ...
 
-    def guardar(self, seguimiento: Seguimiento, car_efectiva: str, cambios: list[Cambio]) -> None: ...
+    def guardar(self, seguimiento: Seguimiento, cambios: list[Cambio]) -> None: ...
 
 
 class MemoriaAlmacen:
@@ -77,7 +84,7 @@ class MemoriaAlmacen:
     def cargar(self) -> dict[str, Seguimiento]:
         return dict(self._datos)
 
-    def guardar(self, seguimiento: Seguimiento, car_efectiva: str, cambios: list[Cambio]) -> None:
+    def guardar(self, seguimiento: Seguimiento, cambios: list[Cambio]) -> None:
         self._datos[seguimiento.minifarm_id] = seguimiento
 
 
@@ -104,17 +111,23 @@ class GoogleSheetsAlmacen:
             if ws is None:
                 ws = self._libro.add_worksheet(title=hoja.value, rows=200, cols=len(encabezado))
                 ws.update(values=[encabezado], range_name="A1")
+            else:
+                actual = (ws.get_all_values() or [[]])[0]
+                if actual[: len(encabezado)] != encabezado:  # hoja de una versión anterior: completar encabezados
+                    ws.update(values=[encabezado], range_name="A1")
             self._hojas[hoja] = ws
 
     def cargar(self) -> dict[str, Seguimiento]:
         datos: dict[str, Seguimiento] = {}
+        n = len(ENCABEZADOS[Hoja.SEGUIMIENTO])
         for fila in self._hojas[Hoja.SEGUIMIENTO].get_all_values()[1:]:
-            fila = (fila + [""] * 5)[:5]
+            fila = (fila + [""] * n)[:n]
             if not fila[0].strip():
                 continue
             datos[fila[0].strip()] = Seguimiento(
                 minifarm_id=fila[0].strip(), nombre=fila[1], car_manual=fila[2].strip(),
-                etapa_actual=fila[3].strip(), actualizado_en=fila[4],
+                etapa_actual=fila[3].strip(), actualizado_en=fila[4], car=fila[5].strip(),
+                terreno_id=fila[6].strip(), terreno_nombre=fila[7], ubicacion=fila[8],
             )
         for fila in self._hojas[Hoja.FECHAS].get_all_values()[1:]:
             fila = (fila + [""] * 6)[:6]
@@ -124,16 +137,17 @@ class GoogleSheetsAlmacen:
             datos.setdefault(mid, Seguimiento(minifarm_id=mid, nombre=fila[1])).fechas[etapa] = fecha
         return datos
 
-    def guardar(self, seguimiento: Seguimiento, car_efectiva: str, cambios: list[Cambio]) -> None:
+    def guardar(self, seguimiento: Seguimiento, cambios: list[Cambio]) -> None:
         mid = seguimiento.minifarm_id
         # 1) fila del proyecto en «seguimiento»
         ws = self._hojas[Hoja.SEGUIMIENTO]
         valores = ws.get_all_values()
         fila_nueva = [mid, seguimiento.nombre, seguimiento.car_manual, seguimiento.etapa_actual,
-                      seguimiento.actualizado_en]
+                      seguimiento.actualizado_en, seguimiento.car, seguimiento.terreno_id,
+                      seguimiento.terreno_nombre, seguimiento.ubicacion]
         numero = next((i + 1 for i, f in enumerate(valores) if i > 0 and f and f[0].strip() == mid), None)
         if numero:
-            ws.update(values=[fila_nueva], range_name=f"A{numero}:E{numero}")
+            ws.update(values=[fila_nueva], range_name=f"A{numero}:I{numero}")
         else:
             ws.append_row(fila_nueva, value_input_option="RAW")
 
@@ -143,7 +157,7 @@ class GoogleSheetsAlmacen:
         otras = [f for f in viejas[1:] if f and f[0].strip() != mid]
         previas = {f[3]: f[5] for f in viejas[1:] if len(f) >= 6 and f[0].strip() == mid}
         propias = [
-            [mid, seguimiento.nombre, car_efectiva, etapa, fecha.isoformat(),
+            [mid, seguimiento.nombre, seguimiento.car, etapa, fecha.isoformat(),
              previas.get(etapa, seguimiento.actualizado_en)]
             for etapa, fecha in seguimiento.fechas.items()
         ]

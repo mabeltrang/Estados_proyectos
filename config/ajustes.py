@@ -50,13 +50,17 @@ COLUMNAS_TEXTO_HISTORICO: dict[Columna, tuple[str, ...]] = {
 # ── API de Unergy ────────────────────────────────────────────────────────────
 API_BASE_URL_POR_DEFECTO = "https://originabot.uner.gy"
 API_PAGE_SIZE = 100
-API_TIMEOUT_SEGUNDOS = 25
-API_REINTENTOS = 2
+API_TIMEOUT_SEGUNDOS = 20
+API_REINTENTOS = 1
 API_MAX_PAGINAS = 500
 API_HILOS_DETALLE = 6
 
-# Cada cuánto se vuelven a pedir los proyectos a la API (segundos).
+# Páginas máximas que se traen en una búsqueda (100 terrenos por página).
+BUSQUEDA_MAX_PAGINAS = 3
+
+# Cada cuánto se vuelven a pedir los datos a la API (segundos).
 CACHE_API_SEGUNDOS = 60 * 60
+CACHE_BUSQUEDA_SEGUNDOS = 10 * 60
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
 # "Próximo a resolución": la fecha probable de resolución cae dentro de estos días.

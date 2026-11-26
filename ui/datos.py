@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import pandas as pd
 import streamlit as st
 
@@ -11,12 +9,21 @@ from config import ajustes
 from config.constantes import Columna, SecretKey
 from config.flujos import FLUJOS
 from core.almacenamiento import Almacen, GoogleSheetsAlmacen, MemoriaAlmacen, Seguimiento
-from core.api_unergy import ClienteUnergy, ErrorApiUnergy
+from core.api_unergy import ClienteUnergy
 from core.estadisticas import BaseTiempos
 from core.fechas import hoy_colombia
 from core.historico import HistoricoCargado, cargar_historico
 from core.prediccion import Prediccion, predecir
-from core.proyectos import ProyectosCargados, asignar_car, cargar_proyectos
+from core.proyectos import (
+    COLUMNAS_PROYECTO,
+    ProyectosCargados,
+    a_texto,
+    asignar_car,
+    cargar_proyectos,
+    identificar_car,
+    minifarms_de_terreno,
+    separar_ubicacion,
+)
 
 CLAVE_ALMACEN_MEMORIA = "_almacen_memoria"
 CLAVE_SEGUIMIENTOS = "_seguimientos"
@@ -42,9 +49,46 @@ def crear_cliente() -> ClienteUnergy:
     )
 
 
-# ── API ──────────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=ajustes.CACHE_API_SEGUNDOS, show_spinner="Consultando proyectos en la API de Unergy…")
+# ── API (todo bajo demanda: nada se descarga hasta que se busca) ────────────
+@st.cache_data(ttl=ajustes.CACHE_BUSQUEDA_SEGUNDOS, show_spinner="Buscando en la API de Unergy…")
+def buscar_terrenos(texto: str) -> pd.DataFrame:
+    """Busca por nombre comercial (Minifarm), nombre de proyecto o terreno. Pocas consultas."""
+    cliente = crear_cliente()
+    filas: list[dict[str, object]] = []
+    for pagina in range(1, ajustes.BUSQUEDA_MAX_PAGINAS + 1):
+        datos = cliente.listar_forestal(pagina=pagina, page_size=ajustes.API_PAGE_SIZE, buscar=texto)
+        for t in datos.get("results", []):  # type: ignore[union-attr]
+            if not isinstance(t, dict) or t.get("id") is None:
+                continue
+            ubicacion = a_texto(t.get("location"))
+            municipio, departamento = separar_ubicacion(ubicacion)
+            car, _ = identificar_car(municipio, departamento)
+            filas.append(
+                {
+                    Columna.TERRENO_ID.value: str(t.get("id")),
+                    Columna.TERRENO_NOMBRE.value: a_texto(t.get("name")),
+                    Columna.UBICACION.value: ubicacion,
+                    Columna.CAR.value: car or "",
+                }
+            )
+        if not datos.get("next"):
+            break
+    return pd.DataFrame(
+        filas, columns=[Columna.TERRENO_ID.value, Columna.TERRENO_NOMBRE.value, Columna.UBICACION.value, Columna.CAR.value]
+    )
+
+
+@st.cache_data(ttl=ajustes.CACHE_BUSQUEDA_SEGUNDOS, show_spinner="Cargando proyectos del terreno…")
+def minifarms_terreno(terreno_id: str) -> pd.DataFrame:
+    detalle = crear_cliente().detalle_forestal(terreno_id)
+    tabla = pd.DataFrame(minifarms_de_terreno(detalle), columns=COLUMNAS_PROYECTO)
+    tabla.columns = [str(c) for c in tabla.columns]
+    return asignar_car(tabla, {})
+
+
+@st.cache_data(ttl=ajustes.CACHE_API_SEGUNDOS, show_spinner="Consultando todos los terrenos (puede tardar varios minutos)…")
 def proyectos_api() -> ProyectosCargados:
+    """Recorre TODOS los terrenos y su detalle. Solo se usa en «Explorar API»."""
     return cargar_proyectos(
         crear_cliente(), ajustes.API_PAGE_SIZE, ajustes.API_MAX_PAGINAS, ajustes.API_HILOS_DETALLE
     )
@@ -118,42 +162,51 @@ def aviso_almacen() -> None:
         )
 
 
-# ── Tabla combinada ──────────────────────────────────────────────────────────
-@dataclass
-class Tablero:
-    tabla: pd.DataFrame          # una fila por Minifarm
-    predicciones: dict[str, Prediccion]
-    carga: ProyectosCargados | None
-    error_api: str | None
+# ── Predicción y tabla de proyectos en seguimiento ───────────────────────────
+def car_de(seg: Seguimiento) -> str | None:
+    car = seg.car_manual or seg.car
+    return car if car in FLUJOS else None
 
 
-def tablero() -> Tablero:
-    try:
-        carga = proyectos_api()
-    except ErrorApiUnergy as exc:
-        return Tablero(pd.DataFrame(), {}, None, exc.mensaje)
+def prediccion_de(car: str | None, seg: Seguimiento | None) -> Prediccion:
+    return predecir(
+        car,
+        seg.etapa_actual if seg and seg.etapa_actual else None,
+        seg.fechas if seg else {},
+        hoy_colombia(),
+        base_tiempos(),
+        ajustes.MIN_ANTECEDENTES,
+        ajustes.UNIDAD_DIAS,
+    )
 
-    seg = seguimientos()
-    tabla = asignar_car(carga.tabla, {k: v.car_manual for k, v in seg.items() if v.car_manual})
-    base = base_tiempos()
-    hoy = hoy_colombia()
+
+def tabla_seguimiento() -> tuple[pd.DataFrame, dict[str, Prediccion]]:
+    """Proyectos que ya tienen seguimiento guardado. No consulta la API."""
+    filas: list[dict[str, object]] = []
     predicciones: dict[str, Prediccion] = {}
-    etapas: list[str] = []
-    for _, fila in tabla.iterrows():
-        mid = str(fila[Columna.MINIFARM_ID])
-        s = seg.get(mid)
-        etapa = s.etapa_actual if s else ""
-        car = fila[Columna.CAR] if isinstance(fila[Columna.CAR], str) else None
-        if car not in FLUJOS:
-            etapa = ""
-        etapas.append(etapa)
-        predicciones[mid] = predecir(
-            car, etapa or None, s.fechas if s else {}, hoy, base, ajustes.MIN_ANTECEDENTES, ajustes.UNIDAD_DIAS
+    for mid, seg in seguimientos().items():
+        car = car_de(seg)
+        pred = prediccion_de(car, seg)
+        predicciones[mid] = pred
+        municipio, _ = separar_ubicacion(seg.ubicacion)
+        filas.append(
+            {
+                Columna.MINIFARM_ID.value: mid,
+                Columna.NOMBRE.value: seg.nombre,
+                Columna.TERRENO_ID.value: seg.terreno_id,
+                Columna.TERRENO_NOMBRE.value: seg.terreno_nombre,
+                Columna.UBICACION.value: seg.ubicacion,
+                Columna.MUNICIPIO.value: municipio,
+                Columna.CAR.value: car or "",
+                "etapa_actual": seg.etapa_actual,
+                "siguiente_etapa": pred.siguiente_etapa or "",
+                "semaforo": pred.semaforo,
+                "resolucion_probable": pred.resolucion.probable if pred.resolucion else None,
+            }
         )
-    tabla["etapa_actual"] = etapas
-    tabla["semaforo"] = [predicciones[str(m)].semaforo for m in tabla[Columna.MINIFARM_ID]]
-    tabla["siguiente_etapa"] = [predicciones[str(m)].siguiente_etapa or "" for m in tabla[Columna.MINIFARM_ID]]
-    tabla["resolucion_probable"] = [
-        p.resolucion.probable if (p := predicciones[str(m)]).resolucion else None for m in tabla[Columna.MINIFARM_ID]
+    columnas = [
+        Columna.MINIFARM_ID.value, Columna.NOMBRE.value, Columna.TERRENO_ID.value, Columna.TERRENO_NOMBRE.value,
+        Columna.UBICACION.value, Columna.MUNICIPIO.value, Columna.CAR.value, "etapa_actual", "siguiente_etapa",
+        "semaforo", "resolucion_probable",
     ]
-    return Tablero(tabla, predicciones, carga, None)
+    return pd.DataFrame(filas, columns=columnas), predicciones

@@ -86,7 +86,7 @@ if st.button("Consultar detalle", disabled=not terreno):
 # 4. Todos los proyectos vs. información territorial
 st.subheader("4. Todos los proyectos frente a la tabla de municipios por CAR")
 st.caption(f"Recorre todas las páginas ({ajustes.API_PAGE_SIZE} por página) y el detalle de cada terreno.")
-if st.button("Analizar todos los proyectos"):
+if st.button("Analizar todos los proyectos (puede tardar varios minutos)"):
     try:
         carga = proyectos_api()
     except ErrorApiUnergy as exc:

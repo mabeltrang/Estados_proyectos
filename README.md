@@ -9,6 +9,16 @@ usando los tiempos de expedientes anteriores.
 - Usa el Excel histórico de `CARS_nuevo` para calcular los tiempos.
 - Guarda los estados y fechas que registras en una hoja de Google Sheets.
 
+## Cómo se usa
+
+- **Proyectos:** escribe parte del nombre comercial, del proyecto o del terreno. Eliges el terreno,
+  luego el proyecto (si el terreno tiene varios), y ves su estado. «← Volver a la búsqueda» te
+  regresa con el mismo texto para abrir otro. Sin texto, la página muestra los proyectos que ya
+  tienen seguimiento guardado.
+- **Vista general:** resumen de los proyectos en seguimiento. No consulta la API, así que carga rápido.
+- La API solo se consulta al buscar (unas pocas llamadas) y al abrir un terreno (una llamada).
+  Recorrer todos los terrenos solo ocurre en «Explorar API → Analizar todos», y puede tardar minutos.
+
 ## Qué hay en cada carpeta
 
 | Ruta | Contenido |
